@@ -292,48 +292,51 @@ fn a_merkle_tree_has_the_root_of_its_layers_hashed_node_by_node() {
     }
     /* RFC 6962's prefix, then the message, in one buffer. */
     let with = |node: Node, m: &[u8]| [&[node.prefix()][..], m].concat();
-    let point = POINTS[UseCase::MerkleTree.points()][0];
-    let input = make_input(point.bytes);
-    let blake3_root = root(&input, MERKLE.leaf_len, |node, m| {
-        blake3::keyed_hash(node.key(), m).as_bytes().to_vec()
-    });
-    let sha256_root = root(&input, MERKLE.leaf_len, |node, m| {
-        Sha256::digest(with(node, m)).to_vec()
-    });
-    let sha1_root = root(&input, MERKLE.leaf_len, |node, m| {
-        sha1_checked::Sha1::try_digest(with(node, m))
-            .hash()
-            .to_vec()
-    });
-    let sha3_root = root(&input, MERKLE.leaf_len, |node, m| {
-        sha3::Sha3_256::digest(with(node, m)).to_vec()
-    });
-    for algorithm in Algorithm::ALL
-        .into_iter()
-        .filter(|a| a.availability().is_ok() && a.takes_part(UseCase::MerkleTree))
-    {
-        let want = match algorithm {
-            Algorithm::Blake3 | Algorithm::Blake3ServilSt | Algorithm::Blake3ServilMt => {
-                &blake3_root
-            }
-            Algorithm::Sha256 | Algorithm::Sha256Ring | Algorithm::Sha256CommonCrypto => {
-                &sha256_root
-            }
-            Algorithm::Sha1Dc => &sha1_root,
-            Algorithm::Sha3_256 => &sha3_root,
-            Algorithm::Blake3Rayon => {
-                unreachable!("{} takes no part in a Merkle tree", algorithm.key())
-            }
-        };
-        let mut roots: Vec<Vec<u8>> = Vec::new();
-        hash_batch(algorithm, &input, point, 2, |r| roots.push(r.to_vec()));
-        assert_eq!(
-            roots,
-            vec![want.clone(), want.clone()],
-            "{}: the root of {} leaves, each tree",
-            algorithm.key(),
-            point.messages
-        );
+    /* The 256-byte-leaf tree, and the packed-leaf trees (32 and 16 bytes). */
+    for point in [0, 5, 7].map(|i| POINTS[UseCase::MerkleTree.points()][i]) {
+        let leaf_len = point.bytes / point.messages;
+        let input = make_input(point.bytes);
+        let blake3_root = root(&input, leaf_len, |node, m| {
+            blake3::keyed_hash(node.key(), m).as_bytes().to_vec()
+        });
+        let sha256_root = root(&input, leaf_len, |node, m| {
+            Sha256::digest(with(node, m)).to_vec()
+        });
+        let sha1_root = root(&input, leaf_len, |node, m| {
+            sha1_checked::Sha1::try_digest(with(node, m))
+                .hash()
+                .to_vec()
+        });
+        let sha3_root = root(&input, leaf_len, |node, m| {
+            sha3::Sha3_256::digest(with(node, m)).to_vec()
+        });
+        for algorithm in Algorithm::ALL
+            .into_iter()
+            .filter(|a| a.availability().is_ok() && a.takes_part(UseCase::MerkleTree))
+        {
+            let want = match algorithm {
+                Algorithm::Blake3 | Algorithm::Blake3ServilSt | Algorithm::Blake3ServilMt => {
+                    &blake3_root
+                }
+                Algorithm::Sha256 | Algorithm::Sha256Ring | Algorithm::Sha256CommonCrypto => {
+                    &sha256_root
+                }
+                Algorithm::Sha1Dc => &sha1_root,
+                Algorithm::Sha3_256 => &sha3_root,
+                Algorithm::Blake3Rayon => {
+                    unreachable!("{} takes no part in a Merkle tree", algorithm.key())
+                }
+            };
+            let mut roots: Vec<Vec<u8>> = Vec::new();
+            hash_batch(algorithm, &input, point, 2, |r| roots.push(r.to_vec()));
+            assert_eq!(
+                roots,
+                vec![want.clone(), want.clone()],
+                "{}: the root of {} leaves of {leaf_len} B, each tree",
+                algorithm.key(),
+                point.messages
+            );
+        }
     }
 }
 

@@ -364,7 +364,11 @@ struct MerkleSpec {
     leaf_len: usize,
 }
 const MERKLE: MerkleSpec = MerkleSpec { leaf_len: 256 };
-const MERKLE_COUNT: usize = 5;
+/// The points with 256-byte leaves, then those with leaves of a digest or
+/// half a digest (32 and 16 bytes, a tree over hashes or commitments; a
+/// million of them, Zooko's example of November 7, 2026), their leaf
+/// length in the label.
+const MERKLE_COUNT: usize = 8;
 
 /// Every message in the batches is one BLAKE3 block of 64 bytes, the size
 /// of a Merkle tree's inner node (two 32-byte children).
@@ -706,6 +710,9 @@ const POINTS: [Point; POINT_COUNT] = [
     Point::merkle("16384", 1 << 14),
     Point::merkle("65536", 1 << 16),
     Point::merkle("262144", 1 << 18),
+    Point::merkle_leaves("65536 x 32 B", 1 << 16, 32),
+    Point::merkle_leaves("1048576 x 32 B", 1 << 20, 32),
+    Point::merkle_leaves("1048576 x 16 B", 1 << 20, 16),
     Point::interleaved_turn("256"),
     Point::interleaved_turn("256").idle(),
     Point::interleaved_turn("256").brief_idle(),
@@ -1329,9 +1336,14 @@ impl Point {
 
     /// A Merkle tree of `leaves` leaves of MERKLE.leaf_len bytes.
     const fn merkle(label: &'static str, leaves: usize) -> Self {
+        Self::merkle_leaves(label, leaves, MERKLE.leaf_len)
+    }
+
+    /// A Merkle tree of `leaves` leaves of `leaf_len` bytes.
+    const fn merkle_leaves(label: &'static str, leaves: usize, leaf_len: usize) -> Self {
         Self {
             label,
-            bytes: leaves * MERKLE.leaf_len,
+            bytes: leaves * leaf_len,
             messages: leaves,
             use_case: UseCase::MerkleTree,
         }
@@ -5442,10 +5454,19 @@ fn hash_merkle(
     iterations: usize,
     mut consume: impl FnMut(&[u8]),
 ) {
+    let leaf_len = point.bytes / point.messages;
     assert!(
-        point.messages.is_power_of_two() && input.len() == point.messages * MERKLE.leaf_len,
-        "a tree's leaves are a power of two of MERKLE.leaf_len bytes"
+        point.messages.is_power_of_two() && input.len() == point.messages * leaf_len,
+        "a tree's leaves are a power of two of one length"
     );
+    if leaf_len < BLOCK_LEN
+        && matches!(
+            algorithm,
+            Algorithm::Blake3ServilSt | Algorithm::Blake3ServilMt
+        )
+    {
+        return hash_merkle_packed(algorithm, input, point, iterations, consume);
+    }
     let depth = point.messages.trailing_zeros() as usize;
     /* The leaves, then each layer's digests: a buffer each, of its size. */
     let size = |k: usize| {
@@ -5464,7 +5485,7 @@ fn hash_merkle(
     for _ in 0..iterations {
         at[0] = block_start(&mut buffers[0]);
         buffers[0].extend_from_slice(black_box(input));
-        let mut message_len = MERKLE.leaf_len;
+        let mut message_len = leaf_len;
         for layer in 0..=depth {
             let (done, rest) = buffers.split_at_mut(layer + 1);
             let (from, to) = (&done[layer][at[layer]..], &mut rest[0]);
@@ -5480,6 +5501,148 @@ fn hash_merkle(
     for (k, buffer) in buffers.into_iter().enumerate() {
         keep_buffers(1, size(k) + BLOCK_SPARE, vec![buffer]);
     }
+}
+
+/// A tree over leaves of a digest or half a digest, BLAKE3-Servil's way:
+/// the leaves written into a `Packed` of their length (the program
+/// producing them in place, as the other contenders write theirs into a
+/// buffer), each layer's digests into a `Packed<32>` which, two by two, is
+/// the next layer's batch of 64-byte parents (`as_blocks`): no copy into
+/// blocks, every layer kept.
+fn hash_merkle_packed(
+    algorithm: Algorithm,
+    input: &[u8],
+    point: Point,
+    iterations: usize,
+    mut consume: impl FnMut(&[u8]),
+) {
+    use blake3_servil::throughput::{Batch, Packed};
+    let leaf_len = point.bytes / point.messages;
+    let depth = point.messages.trailing_zeros() as usize;
+    let hash_many =
+        |mode: blake3_servil::Mode, parents: &Batch, out: &mut [[u8; 32]]| match algorithm {
+            Algorithm::Blake3ServilSt => blake3_servil::throughput::hash_many(mode, parents, out),
+            Algorithm::Blake3ServilMt => {
+                blake3_servil::throughput::hash_many_multithreaded(mode, parents, out)
+            }
+            _ => unreachable!("the packed tree is BLAKE3-Servil's"),
+        };
+    let hash_leaves = |leaves: &Packed<32>, out: &mut [[u8; 32]]| match algorithm {
+        Algorithm::Blake3ServilSt => blake3_servil::throughput::hash_many(
+            blake3_servil::Mode::Keyed(Node::Leaf.key()),
+            leaves,
+            out,
+        ),
+        _ => blake3_servil::throughput::hash_many_multithreaded(
+            blake3_servil::Mode::Keyed(Node::Leaf.key()),
+            leaves,
+            out,
+        ),
+    };
+    let hash_short_leaves = |leaves: &Packed<16>, out: &mut [[u8; 32]]| match algorithm {
+        Algorithm::Blake3ServilSt => blake3_servil::throughput::hash_many(
+            blake3_servil::Mode::Keyed(Node::Leaf.key()),
+            leaves,
+            out,
+        ),
+        _ => blake3_servil::throughput::hash_many_multithreaded(
+            blake3_servil::Mode::Keyed(Node::Leaf.key()),
+            leaves,
+            out,
+        ),
+    };
+    /* The leaves and each layer's digests, kept from sample to sample. */
+    let mut leaves32 = (leaf_len == 32).then(|| take_packed::<32>(point.messages));
+    let mut leaves16 = (leaf_len == 16).then(|| take_packed::<16>(point.messages));
+    let mut layers: Vec<Packed<32>> = (0..=depth)
+        .map(|k| take_packed::<32>(point.messages >> k))
+        .collect();
+    for _ in 0..iterations {
+        if let Some(leaves) = &mut leaves32 {
+            leaves.as_flattened_mut().copy_from_slice(black_box(input));
+            hash_leaves(leaves, &mut layers[0]);
+        } else if let Some(leaves) = &mut leaves16 {
+            leaves.as_flattened_mut().copy_from_slice(black_box(input));
+            hash_short_leaves(leaves, &mut layers[0]);
+        }
+        for k in 1..=depth {
+            let (done, rest) = layers.split_at_mut(k);
+            let parents = Batch::from_blocks(done[k - 1].as_blocks(), 2 * 32);
+            hash_many(
+                blake3_servil::Mode::Keyed(Node::Parent.key()),
+                &parents,
+                &mut rest[0],
+            );
+        }
+        consume(layers[depth].as_flattened());
+    }
+    if let Some(leaves) = leaves32 {
+        keep_packed(leaves);
+    }
+    if let Some(leaves) = leaves16 {
+        keep_packed(leaves);
+    }
+    for layer in layers {
+        keep_packed(layer);
+    }
+}
+
+thread_local! {
+    /// Packed storage kept from sample to sample on each thread, by length
+    /// and count (as INPUT_BUFFERS are): a fresh allocation would put its
+    /// page faults inside the sample.
+    static PACKED32: std::cell::RefCell<Vec<blake3_servil::throughput::Packed<32>>> = const { std::cell::RefCell::new(Vec::new()) };
+    static PACKED16: std::cell::RefCell<Vec<blake3_servil::throughput::Packed<16>>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+trait PackedKeep: Sized {
+    fn kept() -> &'static std::thread::LocalKey<std::cell::RefCell<Vec<Self>>>;
+    fn count(&self) -> usize;
+    fn make(count: usize) -> Self;
+}
+impl PackedKeep for blake3_servil::throughput::Packed<32> {
+    fn kept() -> &'static std::thread::LocalKey<std::cell::RefCell<Vec<Self>>> {
+        &PACKED32
+    }
+    fn count(&self) -> usize {
+        self.len()
+    }
+    fn make(count: usize) -> Self {
+        Self::new(count)
+    }
+}
+impl PackedKeep for blake3_servil::throughput::Packed<16> {
+    fn kept() -> &'static std::thread::LocalKey<std::cell::RefCell<Vec<Self>>> {
+        &PACKED16
+    }
+    fn count(&self) -> usize {
+        self.len()
+    }
+    fn make(count: usize) -> Self {
+        Self::new(count)
+    }
+}
+
+/// This thread's kept packed storage of `count` messages, made the first time.
+fn take_packed<const N: usize>(count: usize) -> blake3_servil::throughput::Packed<N>
+where
+    blake3_servil::throughput::Packed<N>: PackedKeep,
+{
+    <blake3_servil::throughput::Packed<N> as PackedKeep>::kept().with(|kept| {
+        let mut kept = kept.borrow_mut();
+        match kept.iter().position(|p| p.count() == count) {
+            Some(i) => kept.swap_remove(i),
+            None => <blake3_servil::throughput::Packed<N> as PackedKeep>::make(count),
+        }
+    })
+}
+
+fn keep_packed<const N: usize>(packed: blake3_servil::throughput::Packed<N>)
+where
+    blake3_servil::throughput::Packed<N>: PackedKeep,
+{
+    <blake3_servil::throughput::Packed<N> as PackedKeep>::kept()
+        .with(|kept| kept.borrow_mut().push(packed));
 }
 
 thread_local! {
@@ -5686,8 +5849,8 @@ const SERVIL_CALLS: [(Algorithm, UseCase, &str); 32] = [
     (Algorithm::Blake3ServilSt, UseCase::IdleInterleavedTurn, "the Hashers of the 256 open messages; one turn a call (up to 64 pieces, 256 KiB), each after idling: throughput::update_each, then throughput::finalize_each for the messages that ended in it"),
     (Algorithm::Blake3ServilMt, UseCase::InterleavedTurn, "the Hashers of the 256 open messages; one turn a call (up to 64 pieces, 256 KiB), each after other work: throughput::update_each_multithreaded, then throughput::finalize_each for the messages that ended in it"),
     (Algorithm::Blake3ServilMt, UseCase::IdleInterleavedTurn, "the Hashers of the 256 open messages; one turn a call (up to 64 pieces, 256 KiB), each after idling: throughput::update_each_multithreaded, then throughput::finalize_each for the messages that ended in it"),
-    (Algorithm::Blake3ServilSt, UseCase::MerkleTree, "throughput::hash_many(Mode::Keyed(key), &Batch::from_blocks(layer, len), out) for each layer, a tree a sample: the leaves (256 B) written into a kept buffer and hashed under the leaf key, then each layer of parents (64 B, two children's digests) under the parent key into a kept buffer of its own, to the root"),
-    (Algorithm::Blake3ServilMt, UseCase::MerkleTree, "throughput::hash_many_multithreaded(Mode::Keyed(key), &Batch::from_blocks(layer, len), out) for each layer, a tree a sample: the leaves (256 B) written into a kept buffer and hashed under the leaf key, then each layer of parents (64 B, two children's digests) under the parent key into a kept buffer of its own, to the root"),
+    (Algorithm::Blake3ServilSt, UseCase::MerkleTree, "throughput::hash_many(Mode::Keyed(key), &Batch::from_blocks(layer, len), out) for each layer, a tree a sample: the leaves (256 B) written into a kept buffer and hashed under the leaf key, then each layer of parents (64 B, two children's digests) under the parent key into a kept buffer of its own, to the root; leaves of 32 or 16 bytes written into a kept Packed of their length and hashed as they are, each layer's digests into a kept Packed<32>, two by two the next layer's parents (as_blocks), with no copy into blocks"),
+    (Algorithm::Blake3ServilMt, UseCase::MerkleTree, "throughput::hash_many_multithreaded(Mode::Keyed(key), &Batch::from_blocks(layer, len), out) for each layer, a tree a sample: the leaves (256 B) written into a kept buffer and hashed under the leaf key, then each layer of parents (64 B, two children's digests) under the parent key into a kept buffer of its own, to the root; leaves of 32 or 16 bytes written into a kept Packed of their length and hashed as they are, each layer's digests into a kept Packed<32>, two by two the next layer's parents (as_blocks), with no copy into blocks"),
     (Algorithm::Blake3ServilSt, UseCase::OneMessage, "convenience::hash(input), each call after other work"),
     (Algorithm::Blake3ServilSt, UseCase::ManyMessages, "throughput::hash_many(Mode::Plain, &Batch::from_blocks(blocks, 64), out), the batch borrowed in place, each call after other work"),
     (Algorithm::Blake3ServilMt, UseCase::OneMessage, "throughput::hash_multithreaded(Mode::Plain, blocks, len), each call after other work"),
@@ -5822,6 +5985,19 @@ fn blake3_batch(
     match message_len {
         MESSAGE_LEN => blake3_batch_of::<MESSAGE_LEN>(input, key, iterations, consume),
         256 => blake3_batch_of::<256>(input, key, iterations, consume),
+        // The crate's batch function takes whole blocks: a message under a
+        // block (a packed Merkle leaf) is hashed one call each, as a
+        // program would.
+        16 | 32 => each_message(
+            input,
+            message_len,
+            iterations,
+            |m| match key {
+                Some(key) => *blake3::keyed_hash(key, m).as_bytes(),
+                None => *blake3::hash(m).as_bytes(),
+            },
+            consume,
+        ),
         other => panic!("no blake3 batch of {other}-byte messages"),
     }
 }
