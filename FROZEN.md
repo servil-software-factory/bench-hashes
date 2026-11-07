@@ -27,6 +27,10 @@ documents that explain the benchmark (README, METHODOLOGY, CONTRIBUTING,
 the notes) may still change, to say it better.
 
 **Changes for the next release**:
+- **finalize_each resets the hashers it finishes** (John Servil, November
+  7, 2026; BLAKE3-Servil's `finalize` takes the Hasher, Sam's audit on
+  #275). The interleaved cells call no `reset` of their own after it; the
+  work is the same, done by the library in one call.
 - **A run's final load window joins the one before it** (John Servil,
   November 7, 2026). A tail shorter than a window joins the last closed
   window, however long it is; it closed on its own at half a window

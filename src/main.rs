@@ -4838,10 +4838,10 @@ fn hash_interleaved(
                       ended: &[usize],
                       consume: &mut dyn FnMut(&[u8])| {
                     digests.resize(ended.len(), [0u8; 32]);
+                    // finalize_each resets the ended hashers for their next message.
                     blake3_servil::throughput::finalize_each(hashers, ended, &mut digests);
-                    for (&i, digest) in ended.iter().zip(&digests) {
+                    for digest in &digests {
                         consume(digest);
-                        hashers[i].reset(None);
                     }
                 },
                 consume,
