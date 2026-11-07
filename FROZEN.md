@@ -27,6 +27,16 @@ documents that explain the benchmark (README, METHODOLOGY, CONTRIBUTING,
 the notes) may still change, to say it better.
 
 **Changes for the next release**:
+- **Merkle trees over leaves of a digest or half a digest** (John Servil,
+  November 7, 2026; Zooko: 16- and 32-byte leaves will be common, a
+  million of them). Three points beside the 256-byte-leaf trees:
+  65536 x 32 B, 1048576 x 32 B, 1048576 x 16 B. BLAKE3-Servil hashes them
+  from a `Packed` of their length (BLAKE3-Servil's new prepared input for
+  16- and 32-byte messages, on a 128-byte boundary, no padding in
+  memory), each layer's digests into a `Packed<32>` that is, two by two,
+  the next layer's parents; the other contenders as before, their leaves
+  in a buffer of the program's. The leaves are written into the kept
+  storage each tree, as the 256-byte leaves are.
 - **A run's final load window joins the one before it** (John Servil,
   November 7, 2026). A tail shorter than a window joins the last closed
   window, however long it is; it closed on its own at half a window
@@ -1092,7 +1102,7 @@ use case Interleaved: 256
 use case Collection: git objects, Nix files
 use case LentBatches: 16, 64, 256, 1024, 4096, 16384, 65536
 use case ContinuousCollection: git objects, Nix files
-use case MerkleTree: 1024, 4096, 16384, 65536, 262144
+use case MerkleTree: 1024, 4096, 16384, 65536, 262144, 65536 x 32 B, 1048576 x 32 B, 1048576 x 16 B
 use case InterleavedTurn: 256
 use case IdleInterleavedTurn: 256
 use case BriefIdleInterleavedTurn: 256
@@ -1109,8 +1119,8 @@ blake3-servil-st InterleavedTurn: the Hashers of the 256 open messages; one turn
 blake3-servil-st IdleInterleavedTurn: the Hashers of the 256 open messages; one turn a call (up to 64 pieces, 256 KiB), each after idling: throughput::update_each, then throughput::finalize_each for the messages that ended in it
 blake3-servil-mt InterleavedTurn: the Hashers of the 256 open messages; one turn a call (up to 64 pieces, 256 KiB), each after other work: throughput::update_each_multithreaded, then throughput::finalize_each for the messages that ended in it
 blake3-servil-mt IdleInterleavedTurn: the Hashers of the 256 open messages; one turn a call (up to 64 pieces, 256 KiB), each after idling: throughput::update_each_multithreaded, then throughput::finalize_each for the messages that ended in it
-blake3-servil-st MerkleTree: throughput::hash_many(Mode::Keyed(key), &Batch::from_blocks(layer, len), out) for each layer, a tree a sample: the leaves (256 B) written into a kept buffer and hashed under the leaf key, then each layer of parents (64 B, two children's digests) under the parent key into a kept buffer of its own, to the root
-blake3-servil-mt MerkleTree: throughput::hash_many_multithreaded(Mode::Keyed(key), &Batch::from_blocks(layer, len), out) for each layer, a tree a sample: the leaves (256 B) written into a kept buffer and hashed under the leaf key, then each layer of parents (64 B, two children's digests) under the parent key into a kept buffer of its own, to the root
+blake3-servil-st MerkleTree: throughput::hash_many(Mode::Keyed(key), &Batch::from_blocks(layer, len), out) for each layer, a tree a sample: the leaves (256 B) written into a kept buffer and hashed under the leaf key, then each layer of parents (64 B, two children's digests) under the parent key into a kept buffer of its own, to the root; leaves of 32 or 16 bytes written into a kept Packed of their length and hashed as they are, each layer's digests into a kept Packed<32>, two by two the next layer's parents (as_blocks), with no copy into blocks
+blake3-servil-mt MerkleTree: throughput::hash_many_multithreaded(Mode::Keyed(key), &Batch::from_blocks(layer, len), out) for each layer, a tree a sample: the leaves (256 B) written into a kept buffer and hashed under the leaf key, then each layer of parents (64 B, two children's digests) under the parent key into a kept buffer of its own, to the root; leaves of 32 or 16 bytes written into a kept Packed of their length and hashed as they are, each layer's digests into a kept Packed<32>, two by two the next layer's parents (as_blocks), with no copy into blocks
 blake3-servil-st OneMessage: convenience::hash(input), each call after other work
 blake3-servil-st ManyMessages: throughput::hash_many(Mode::Plain, &Batch::from_blocks(blocks, 64), out), the batch borrowed in place, each call after other work
 blake3-servil-mt OneMessage: throughput::hash_multithreaded(Mode::Plain, blocks, len), each call after other work
