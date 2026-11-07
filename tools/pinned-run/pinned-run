@@ -1,0 +1,582 @@
+#!/usr/bin/env python3
+"""pinned-run: run a job on a remote machine from inputs named by content,
+and accept its results only when they say they came from those inputs.
+
+Why (Sam, October 27): wrong-version runs kept happening because inputs were
+named by mutable things (branches, reused worktrees, paths on PATH, a lock
+that ignores a patch) and results were judged by exit status. This tool:
+
+  1. names every repository by a full 40-hex commit (branch names refused),
+     and every script by its SHA-256;
+  2. builds each run in a fresh directory: each repository fetched by hash
+     and checked to be that commit; no worktree, target or lock reused;
+  3. runs the script stored read-only under its hash, the hash recorded;
+  4. verifies the outputs: each `expect` rule's strings must appear in the
+     named files, and no `forbid` string (default: warnings that mean "I did
+     something other than asked", such as Cargo's unused patch) may appear in
+     any log; the run is marked VERIFIED or FAILED;
+  5. fetches a run's results only when VERIFIED (--failed to fetch anyway,
+     into a directory named FAILED-...).
+
+And it wastes less of the machines' and the launcher's time (Sam, November 5:
+code, not instructions, since a successor may not read the instructions):
+
+  6. a run launched again under its name on its host supersedes the earlier
+     one still queued (not yet holding its lock), which is cancelled and says
+     so; launch lists what else waits on that host's lock;
+  7. `host` may be a list: the run goes to the first machine whose lock is
+     free, else the one with the shortest queue;
+  8. `pinned-run next` waits for the next of the runs launched from here to
+     finish and prints its verdict, so nobody sleeps a guessed half hour.
+
+The remote side is this same file, installed at /usr/local/bin/pinned-run,
+reached only through requests (`pinned-run serve VERB ...`). On the bench
+machines the everyday key's authorized_keys line forces that program
+(`command="/usr/local/bin/pinned-run serve-forced",restrict`), so nothing
+else runs with that key; an interactive shell takes a key of its own
+(~/.ssh/id_bench_shell), which holds no bench lock and whose timing is no
+evidence.
+
+Manifest (JSON):
+  {"name": "...", "host": "root@1.2.3.4" or ["root@a", "root@b"],
+   "repos": [{"url": "https://github.com/o/r", "commit": "<40 hex>", "path": "src"}, ...],
+   "script": "path/to/job.sh",            # local file; run as: bash job.sh RUN_DIR
+   "env": {"K": "V"},                      # optional
+   "lock": "/root/bench-native-afk.lock",  # optional: held for the job
+   "expect": [{"file": "out/x.txt", "contains": ["commit <hash>", ...]}, ...],
+   "forbid": ["..."]}                      # optional; added to the defaults
+
+Commands:
+  pinned-run launch MANIFEST      start; prints the run id (and the host, for a list)
+  pinned-run status HOST RUN_ID   running / queued / VERIFIED / FAILED / CANCELLED (+ reasons)
+  pinned-run wait HOST RUN_ID     wait until done, print status
+  pinned-run next [SECONDS]       wait for the next run launched from here to finish (exit 3: none pending)
+  pinned-run pending              the runs launched from here not yet finished
+  pinned-run list HOST            every run on HOST, one a line
+  pinned-run cancel HOST RUN_ID   stop a run (queued or running)
+  pinned-run fetch HOST RUN_ID DEST [--failed]
+"""
+import base64, fcntl, glob, hashlib, io, json, os, re, shlex, subprocess, sys, tarfile, time
+
+SSH = ["ssh", "-F", "/dev/null", "-i", os.path.expanduser("~/.ssh/id_ed25519"), "-o", "BatchMode=yes",
+       "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR",
+       "-o", "ConnectTimeout=15",
+       # One connection reused for every call: a new SSH login runs PAM, the MOTD scripts and a
+       # systemd --user manager, about half a CPU-second the machine's load reading counts as
+       # other programs' (Ice Lake A/A checks, November 1: every no-verdict overlapped a login).
+       "-o", "ControlMaster=auto", "-o", "ControlPath=" + os.path.expanduser("~/.ssh/cm-%r@%h:%p"),
+       "-o", "ControlPersist=30m"]
+RUNS = os.environ.get("PINNED_RUN_ROOT", "/root/pinned-runs")
+INSTALLED = os.environ.get("PINNED_RUN_INSTALLED", "/usr/local/bin/pinned-run")
+REGISTRY = os.path.expanduser("~/.cache/pinned-run/launched.jsonl")
+REPORTED = os.path.expanduser("~/.cache/pinned-run/reported.txt")
+DEFAULT_FORBID = [
+    "was not used in the crate graph",      # Cargo: a [patch] silently ignored
+    "raw profile version mismatch",         # an llvm tool from another LLVM
+]
+HEX40 = re.compile(r"[0-9a-f]{40}")
+RUN_ID = re.compile(r"[A-Za-z0-9._-]+-\d{8}T\d{6}-[0-9a-f]{8}")
+FINAL = ("VERIFIED", "FAILED", "CANCELLED", "lost")
+SYSTEMCTL = ["systemctl"]  # tests replace it
+REFUSAL = ("pinned-run: this key runs pinned-run requests only (launch, status, wait, next, list, cancel, fetch).\n"
+           "For a shell, use ~/.ssh/id_bench_shell: it holds no bench lock, and timing taken there is no evidence.\n")
+
+
+def die(msg, code=1):
+    sys.stderr.write(f"pinned-run: {msg}\n")
+    sys.exit(code)
+
+
+def sha256(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def own_bytes():
+    return open(os.path.realpath(__file__), "rb").read()
+
+
+def record_phase(run, name, **details):
+    """Workflow events, outside the timed job: monotonic intervals on one host/boot,
+    UTC for correlation. A stopped executor leaves the prefix it completed."""
+    with open("/proc/sys/kernel/random/boot_id") as f:
+        boot = f.read().strip()
+    row = dict(version=1, phase=name, utc_ns=time.time_ns(),
+               monotonic_ns=time.monotonic_ns(), boot_id=boot, **details)
+    with open(f"{run}/phases.jsonl", "a") as f:
+        f.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+# ---------------------------------------------------------------- the client's transport
+def call(host, verb, *args, stdin=None, check=True):
+    """One request to `host`'s pinned-run: its stdout (bytes). Tests replace this."""
+    command = " ".join(shlex.quote(a) for a in ("pinned-run", "serve", verb, *args))
+    r = subprocess.run(SSH + [host, command], input=stdin, capture_output=True)
+    if check and r.returncode != 0:
+        die(f"{host}: {verb} {' '.join(args)[:80]}: exit {r.returncode}\n{r.stderr.decode(errors='replace')[-2000:]}")
+    return r.stdout
+
+
+_INSTALLED_ON = set()
+
+
+def ensure_installed(host):
+    """The host runs this file's version of the remote side: installed when it differs (once a
+    host a process)."""
+    if host in _INSTALLED_ON:
+        return
+    _INSTALLED_ON.add(host)
+    mine = sha256(own_bytes())
+    if call(host, "version", check=False).decode().strip() == mine:
+        return
+    if call(host, "install", stdin=own_bytes(), check=False).decode().strip() != mine:
+        die(f"{host}: could not install pinned-run; a host without it takes its first copy through a shell: "
+            f"ssh -i ~/.ssh/id_bench_shell {host} 'cat > {INSTALLED} && chmod 755 {INSTALLED}' < {os.path.realpath(__file__)}")
+
+
+def validate(m):
+    for key in ("name", "host", "repos", "script"):
+        if key not in m:
+            die(f"manifest lacks {key!r}")
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", m["name"]):
+        die("name: letters, digits, . _ - only")
+    paths = set()
+    for r in m["repos"]:
+        if not HEX40.fullmatch(r.get("commit", "")):
+            die(f"{r.get('url')}: commit must be a full 40-hex hash, not {r.get('commit')!r}")
+        p = r.get("path", "")
+        if not p or p.startswith("/") or ".." in p.split("/") or p in paths:
+            die(f"{r.get('url')}: bad or repeated path {p!r}")
+        paths.add(p)
+    for e in m.get("expect", []):
+        if not e.get("file") or not e.get("contains"):
+            die("each expect rule needs a file and contains")
+
+
+def choose_host(m):
+    """A list of hosts: the first whose lock is free, else the shortest queue."""
+    hosts = m["host"] if isinstance(m["host"], list) else [m["host"]]
+    if len(hosts) == 1 or not m.get("lock"):
+        return hosts[0]
+    best = None
+    for h in hosts:
+        state = json.loads(call(h, "lock", m["lock"]))
+        if state["free"] and state["queued"] == 0:
+            return h
+        key = (state["queued"] + (0 if state["free"] else 1), hosts.index(h))
+        best = min(best, (key, h)) if best else (key, h)
+    return best[1]
+
+
+def launch(manifest_path):
+    m = json.load(open(manifest_path))
+    validate(m)
+    script = open(m["script"], "rb").read()
+    host = choose_host(m)
+    m["host"] = host
+    m["script_sha256"] = sha256(script)
+    m["forbid"] = DEFAULT_FORBID + m.get("forbid", [])
+    m["launched"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    body = json.dumps(m, indent=1, sort_keys=True).encode()
+    run_id = f"{m['name']}-{time.strftime('%Y%m%dT%H%M%S', time.gmtime())}-{sha256(body)[:8]}"
+    ensure_installed(host)
+    reply = json.loads(call(host, "submit", run_id, stdin=json.dumps({"manifest": m, "script": base64.b64encode(script).decode()}).encode()))
+    for line in reply.get("notes", []):
+        sys.stderr.write(f"pinned-run: {host}: {line}\n")
+    os.makedirs(os.path.dirname(REGISTRY), exist_ok=True)
+    with open(REGISTRY, "a") as f:
+        f.write(json.dumps({"run": run_id, "host": host}) + "\n")
+    print(run_id if isinstance(json.load(open(manifest_path))["host"], str) else f"{run_id} {host}")
+
+
+def status(host, run_id):
+    return call(host, "status", run_id, check=False).decode().strip()
+
+
+def registered():
+    if not os.path.exists(REGISTRY):
+        return []
+    return [json.loads(l) for l in open(REGISTRY) if l.strip()]
+
+
+def states():
+    """(host, run, state) of every registered run, by one list a host."""
+    runs = registered()
+    out = []
+    for host in sorted({r["host"] for r in runs}):
+        ensure_installed(host)
+        known = {x["run"]: x["state"] for x in map(json.loads, call(host, "list", check=False).decode().splitlines() or [])}
+        out += [(host, r["run"], known.get(r["run"], "gone")) for r in runs if r["host"] == host]
+    return out
+
+
+def pending():
+    """(host, run, state) of every registered run not yet final."""
+    return [x for x in states() if x[2] not in FINAL + ("gone",)]
+
+
+def reported():
+    return set(open(REPORTED).read().split()) if os.path.exists(REPORTED) else set()
+
+
+def report(host, run):
+    """Print a finished run's verdict, once: `next` never reports a run twice, nor misses one that
+    finished between calls."""
+    print(f"{run} {host}\n{status(host, run)}")
+    os.makedirs(os.path.dirname(REPORTED), exist_ok=True)
+    with open(REPORTED, "a") as f:
+        f.write(run + "\n")
+    return run
+
+
+def next_done(limit=None, poll=20):
+    """The next run launched from here to finish, printed: one that has finished since it was last
+    reported first, else the first of those pending to finish. Exit 3 if none is either."""
+    seen = reported()
+    everything = states()
+    for host, run, state in everything:
+        if state in FINAL and run not in seen:
+            return report(host, run)
+    waiting = [x for x in everything if x[2] not in FINAL + ("gone",)]
+    if not waiting:
+        die("no run launched from here is pending or unreported", 3)
+    started = time.monotonic()
+    while True:
+        for host, run, _ in waiting:
+            if status(host, run).split("\n", 1)[0] in FINAL:
+                return report(host, run)
+        if limit is not None and time.monotonic() - started > limit:
+            die(f"none of {len(waiting)} runs finished within {limit} s", 4)
+        time.sleep(poll)
+
+
+def fetch(host, run_id, dest, failed):
+    s = status(host, run_id)
+    ok = s.startswith("VERIFIED")
+    if not ok and not failed:
+        die(f"{run_id} is not verified:\n{s}")
+    target = os.path.join(dest, run_id if ok else f"FAILED-{run_id}")
+    os.makedirs(target, exist_ok=True)
+    data = call(host, "fetch", run_id)
+    with tarfile.open(fileobj=io.BytesIO(data)) as t:
+        t.extractall(target, filter="data")
+    print(target)
+
+
+# ---------------------------------------------------------------- the server's requests
+def run_dir(run_id):
+    if not RUN_ID.fullmatch(run_id):
+        die(f"not a run id: {run_id!r}")
+    return f"{RUNS}/{run_id}"
+
+
+def state_of(run):
+    """A run's state: its STATUS when it has one; lost when it has none and its unit is gone (a
+    reboot, a restart that killed it); running once it holds its lock (or has no lock); queued
+    before."""
+    if os.path.exists(f"{run}/STATUS"):
+        with open(f"{run}/STATUS") as f:
+            return f.read().strip()
+    if subprocess.run(SYSTEMCTL + ["is-active", "--quiet", unit_of(os.path.basename(run))]).returncode != 0:
+        return "lost"
+    with open(f"{run}/manifest.json") as f:
+        m = json.load(f)
+    return "running" if os.path.exists(f"{run}/LOCKED") or (not m.get("lock") and os.path.exists(f"{run}/STARTED")) else "queued"
+
+
+def all_runs():
+    out = []
+    for d in sorted(glob.glob(f"{RUNS}/*/manifest.json")):
+        run = os.path.dirname(d)
+        try:
+            m = json.load(open(d))
+        except (OSError, ValueError):
+            continue
+        out.append((run, m))
+    return out
+
+
+def unit_of(run_id):
+    return "pinned-" + sha256(run_id.encode())[:12]
+
+
+def stop(run, reason):
+    """Stop a run's unit (its processes with it) and mark it CANCELLED, unless it has finished."""
+    run_id = os.path.basename(run)
+    subprocess.run(SYSTEMCTL + ["stop", unit_of(run_id)], capture_output=True)
+    if not os.path.exists(f"{run}/STATUS"):
+        with open(f"{run}/REASONS", "a") as f:
+            f.write(f"cancelled: {reason}\n")
+        with open(f"{run}/STATUS", "w") as f:
+            f.write("CANCELLED\n")
+
+
+def start_unit(run_id, tool_path):
+    # OOMPolicy=continue: the kernel's OOM killer taking one of the job's
+    # processes (a mutant's test allocating without end) fails that process,
+    # not the whole unit (systemd's default stops it, and the run is left
+    # without a STATUS: AmpereOne, November 3).
+    subprocess.run(["systemd-run", f"--unit={unit_of(run_id)}", "--collect", "-p", "OOMPolicy=continue",
+                    "python3", tool_path, "remote-execute", run_dir(run_id)], capture_output=True, check=True)
+
+
+def serve_submit(run_id, payload, start=start_unit):
+    run = run_dir(run_id)
+    if os.path.exists(run):
+        die(f"{run} exists")
+    m, script = payload["manifest"], base64.b64decode(payload["script"])
+    validate(m)
+    if sha256(script) != m["script_sha256"]:
+        die("the script's bytes do not match its hash")
+    tool = own_bytes()
+    m["tool_sha256"] = sha256(tool)
+    os.makedirs(f"{RUNS}/tools", exist_ok=True)
+    os.makedirs(f"{RUNS}/scripts", exist_ok=True)
+    tool_path = f"{RUNS}/tools/pinned-run-{m['tool_sha256']}.py"
+    for path, data in ((tool_path, tool), (f"{RUNS}/scripts/job-{m['script_sha256']}.sh", script)):
+        if not os.path.exists(path):
+            with open(path + ".tmp", "wb") as f:
+                f.write(data)
+            os.chmod(path + ".tmp", 0o444)
+            os.replace(path + ".tmp", path)
+    notes = []
+    # A run launched again under its name supersedes the earlier one still
+    # waiting for its lock: measuring code that has since changed only holds
+    # the lock against the run that matters (November 5: three rounds of a
+    # PR's checks, two of them on replaced commits).
+    for other, om in all_runs():
+        if om.get("name") == m["name"] and state_of(other) == "queued":
+            stop(other, f"superseded by {run_id}")
+            notes.append(f"cancelled {os.path.basename(other)}: superseded by this run")
+    if m.get("lock"):
+        ahead = [os.path.basename(o) for o, om in all_runs() if om.get("lock") == m["lock"] and state_of(o) in ("queued", "running")]
+        if ahead:
+            notes.append(f"{len(ahead)} run(s) ahead on {m['lock']}: " + ", ".join(ahead))
+    os.makedirs(run)
+    with open(f"{run}/manifest.json", "w") as f:
+        json.dump(m, f, indent=1, sort_keys=True)
+    record_phase(run, "accepted")
+    start(run_id, tool_path)
+    return {"run": run_id, "notes": notes}
+
+
+def serve_lock(lock):
+    free = True
+    if os.path.exists(lock):
+        with open(lock, "a") as fd:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            except BlockingIOError:
+                free = False
+    queued = sum(1 for o, om in all_runs() if om.get("lock") == lock and state_of(o) == "queued")
+    return {"free": free, "queued": queued}
+
+
+def serve_fetch(run_id, out):
+    run = run_dir(run_id)
+    with tarfile.open(fileobj=out, mode="w|") as t:
+        for part in ("manifest.json", "STATUS", "REASONS", "prepare.log", "job.log", "phases.jsonl", "out"):
+            if os.path.exists(f"{run}/{part}"):
+                t.add(f"{run}/{part}", arcname=part)
+
+
+def serve(verb, args, stdin=sys.stdin.buffer, stdout=sys.stdout.buffer):
+    """One request: what `pinned-run serve VERB ARGS` does on the remote side."""
+    def say(text):
+        stdout.write(text.encode() if isinstance(text, str) else text)
+    if verb == "version" and not args:
+        say(sha256(own_bytes()) + "\n")
+    elif verb == "install" and not args:
+        data = stdin.read()
+        compile(data, INSTALLED, "exec")  # a file that does not parse is never installed
+        tmp = INSTALLED + ".new"
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.chmod(tmp, 0o755)
+        os.replace(tmp, INSTALLED)
+        say(sha256(data) + "\n")
+    elif verb == "submit" and len(args) == 1:
+        say(json.dumps(serve_submit(args[0], json.loads(stdin.read()))) + "\n")
+    elif verb == "status" and len(args) == 1:
+        run = run_dir(args[0])
+        if not os.path.exists(f"{run}/manifest.json"):
+            die(f"no run {args[0]}")
+        reasons = open(f"{run}/REASONS").read() if os.path.exists(f"{run}/REASONS") else ""
+        say(state_of(run) + "\n" + reasons)
+    elif verb == "list" and not args:
+        for run, m in all_runs():
+            say(json.dumps({"run": os.path.basename(run), "name": m.get("name"), "state": state_of(run), "launched": m.get("launched")}) + "\n")
+    elif verb == "cancel" and len(args) == 1:
+        stop(run_dir(args[0]), "cancelled by request")
+        say("CANCELLED\n")
+    elif verb == "lock" and len(args) == 1:
+        say(json.dumps(serve_lock(args[0])) + "\n")
+    elif verb == "fetch" and len(args) == 1:
+        serve_fetch(args[0], stdout)
+    else:
+        die(f"no such request: {verb} {' '.join(args)}")
+
+
+def serve_forced():
+    """The forced command: the client's request, from SSH_ORIGINAL_COMMAND, and nothing else."""
+    try:
+        words = shlex.split(os.environ.get("SSH_ORIGINAL_COMMAND", ""))
+    except ValueError:
+        words = []
+    if len(words) < 3 or words[:2] != ["pinned-run", "serve"]:
+        sys.stderr.write(REFUSAL)
+        sys.exit(1)
+    serve(words[2], words[3:])
+
+
+# ---------------------------------------------------------------- the run itself (remote)
+def sh(cmd, cwd=None, log=None):
+    r = subprocess.run(cmd, cwd=cwd, shell=isinstance(cmd, str), capture_output=True, text=True)
+    if log:
+        log.write(f"$ {cmd}\n{r.stdout}{r.stderr}exit {r.returncode}\n")
+        log.flush()
+    return r
+
+
+def remote_execute(run):
+    if os.path.exists(f"{run}/STATUS"):
+        return  # a terminal run and its phase record stay immutable
+    m = json.load(open(f"{run}/manifest.json"))
+    # A run executes once. A second remote-execute of the same run (its unit
+    # restarted: needrestart did so on the AmpereOne after unattended-upgrade,
+    # November 3, killing the first) must not prepare over the first's
+    # checkouts or run the job again: it fails the run and says why.
+    try:
+        os.close(os.open(f"{run}/STARTED", os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+    except FileExistsError:
+        with open(f"{run}/REASONS", "a") as f:
+            f.write("executed twice: the run's unit was restarted (needrestart after an upgrade?), so its first execution was killed\n")
+        with open(f"{run}/STATUS", "w") as f:
+            f.write("FAILED\n")
+        return
+    record_phase(run, "executor_started")
+    os.makedirs(f"{run}/out", exist_ok=True)
+    reasons = []
+    lock = open(m["lock"], "a") if m.get("lock") else None
+    if lock:
+        # Preparation consumes CPU and I/O too: cloning a queued run's
+        # repositories once spoiled the timing run ahead of it. Hold the
+        # same lock through preparation, the job and result verification.
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        open(f"{run}/LOCKED", "w").close()
+        record_phase(run, "lock_acquired")
+    with open(f"{run}/prepare.log", "w") as log:
+        # Every repository fetched by hash into a fresh directory, and checked.
+        # Git's objects are named by their hashes, so one mirror per URL is a
+        # safe shared cache; each run clones from it, with full history (check
+        # builds older commits), and origin set back to the real URL.
+        for r in sorted(m["repos"], key=lambda r: r["path"].count("/")):
+            d = f"{run}/{r['path']}"
+            cache = f"{RUNS}/cache/{sha256(r['url'].encode())[:16]}.git"
+            steps = []
+            if not os.path.exists(cache):
+                steps.append(["git", "clone", "-q", "--mirror", r["url"], cache])
+            else:
+                steps.append(["git", "-C", cache, "fetch", "-q", "--prune", "origin"])
+            steps += [["sh", "-c", f"git -C {cache} cat-file -e {r['commit']}^{{commit}} || git -C {cache} fetch -q {shlex.quote(r['url'])} {r['commit']}"],
+                      ["git", "-C", cache, "update-ref", f"refs/pinned/{r['commit']}", r["commit"]],
+                      ["git", "init", "-q", d],
+                      ["git", "-C", d, "remote", "add", "origin", r["url"]],
+                      ["git", "-C", d, "fetch", "-q", cache, "+refs/*:refs/cache/*"],
+                      ["git", "-C", d, "checkout", "-q", "--detach", r["commit"]]]
+            for cmd in steps:
+                p = sh(cmd, log=log)
+                if p.returncode != 0:
+                    reasons.append(f"prepare: {' '.join(cmd)} failed")
+                    break
+            head = sh(["git", "-C", d, "rev-parse", "HEAD"], log=log).stdout.strip()
+            if head != r["commit"]:
+                reasons.append(f"prepare: {r['path']} is {head}, not {r['commit']}")
+        # The script, read-only under its hash, checked again before it runs.
+        script = f"{RUNS}/scripts/job-{m['script_sha256']}.sh"
+        if sha256(open(script, "rb").read()) != m["script_sha256"]:
+            reasons.append("prepare: the stored script's hash changed")
+    record_phase(run, "prepared", ok=not reasons)
+    if not reasons:
+        env = dict(os.environ, HOME="/root", RUN_DIR=run, **m.get("env", {}))
+        with open(f"{run}/job.log", "w") as out:
+            p = subprocess.run(["bash", script, run], cwd=run, env=env, stdout=out, stderr=subprocess.STDOUT)
+        record_phase(run, "job_finished", exit_code=p.returncode)
+        if p.returncode != 0:
+            reasons.append(f"job: exit {p.returncode}")
+        verification = verify(run, m)
+        reasons += verification
+        record_phase(run, "verification_finished", ok=not verification)
+    if lock:
+        lock.close()
+    if os.path.exists(f"{run}/STATUS"):
+        return  # cancelled meanwhile: its STATUS stands
+    with open(f"{run}/REASONS", "w") as f:
+        f.write("".join(f"{x}\n" for x in reasons))
+    state = "FAILED" if reasons else "VERIFIED"
+    record_phase(run, "finished", status=state)
+    with open(f"{run}/STATUS", "w") as f:
+        f.write(state + "\n")
+
+
+def verify(run, m):
+    reasons = []
+    for e in m.get("expect", []):
+        files = sorted(glob.glob(os.path.join(run, e["file"])))
+        if not files:
+            reasons.append(f"expect: no file {e['file']}")
+        for f in files:
+            text = open(f, errors="replace").read()
+            for s in e["contains"]:
+                if s not in text:
+                    reasons.append(f"expect: {os.path.relpath(f, run)} lacks {s!r}")
+    logs = [f"{run}/job.log", f"{run}/prepare.log"] + glob.glob(f"{run}/out/**/*.log", recursive=True) \
+        + glob.glob(f"{run}/out/**/*.err", recursive=True) + glob.glob(f"{run}/out/**/*.txt", recursive=True)
+    # *.txt too: a job's own log named check.txt once held a Traceback that read VERIFIED (Nov 3).
+    for f in sorted(set(logs)):
+        if os.path.exists(f):
+            text = open(f, errors="replace").read()
+            for s in m["forbid"]:
+                if s in text:
+                    reasons.append(f"forbid: {os.path.relpath(f, run)} says {s!r}")
+    return reasons
+
+
+def main():
+    a = sys.argv[1:]
+    if not a:
+        die(__doc__)
+    if a[0] == "serve-forced" and len(a) == 1:
+        serve_forced()
+    elif a[0] == "serve" and len(a) >= 2:
+        if a[1] == "remote-execute":
+            die("remote-execute is the run's own unit's, not a request")
+        serve(a[1], a[2:])
+    elif a[0] == "remote-execute" and len(a) == 2:
+        remote_execute(a[1])
+    elif a[0] == "launch" and len(a) == 2:
+        launch(a[1])
+    elif a[0] == "status" and len(a) == 3:
+        print(status(a[1], a[2]))
+    elif a[0] == "wait" and len(a) == 3:
+        while (s := status(a[1], a[2])).split("\n", 1)[0] not in FINAL:
+            time.sleep(20)
+        print(s)
+    elif a[0] == "next" and len(a) in (1, 2):
+        next_done(float(a[1]) if len(a) == 2 else None)
+    elif a[0] == "pending" and len(a) == 1:
+        for host, run, state in pending():
+            print(f"{state:8} {host} {run}")
+    elif a[0] == "list" and len(a) == 2:
+        ensure_installed(a[1])
+        sys.stdout.write(call(a[1], "list").decode())
+    elif a[0] == "cancel" and len(a) == 3:
+        print(call(a[1], "cancel", a[2]).decode().strip())
+    elif a[0] == "fetch" and len(a) in (4, 5):
+        fetch(a[1], a[2], a[3], "--failed" in a)
+    else:
+        die(__doc__)
+
+
+if __name__ == "__main__":
+    main()
