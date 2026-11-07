@@ -17,6 +17,14 @@ jobs:
       CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@v4
+      - name: Pinned runner and fault controls
+        if: runner.os == 'Linux'
+        run: python3 tools/pinned-run/check.py --output "${{ runner.temp }}/pinned-run-check"
+      - uses: actions/upload-artifact@v4
+        if: always() && runner.os == 'Linux'
+        with:
+          name: pinned-run-check-${{ matrix.os }}
+          path: ${{ runner.temp }}/pinned-run-check/
       - uses: dtolnay/rust-toolchain@stable
         with:
           # check's coverage uses the toolchain's llvm-profdata and llvm-cov,
