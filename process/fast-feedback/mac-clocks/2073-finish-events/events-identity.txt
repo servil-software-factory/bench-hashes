@@ -1,0 +1,6 @@
+old 0b5bf7b71cb5f850067fa4182d9a3c724d7e5710
+new f13933376c8b8236adaeffe6aa9d25ad25f2af24
+bench 9994de190259648ede82f7c5e4dbac4f1534a41d
+rustc rustc 1.98.0-nightly (f428d123a 2026-06-19)
+old tree clean: true
+new tree clean: true

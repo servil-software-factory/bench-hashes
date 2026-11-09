@@ -1,0 +1,40 @@
+wall clock: CLOCK_UPTIME_RAW (mach_absolute_time; stops during sleep; the raw counter, no NTP)
+one wall read: 15 ns (mean of 200000)
+one counts read: 175 ns wall, 160 ns P-time, 393 P-cycles, 1558 P-instructions (means of 200000)
+spin: 1306334 ns per 1e6 rounds; 765 rounds per us
+no work, counts outside wall (the samplers' order), 20000 samples:
+  wall ns        min        0 p50        0 mean       10 p95       42 max        167
+  P time ns      min       83 p50      166 mean      151 p95      167 max       1083
+  P cycles       min      452 p50      469 mean      471 p95      476 max       3146
+  P instructions min     1791 p50     1792 mean     1792 p95     1792 max       5163
+  E time ns      min        0 p50        0 mean        0 p95        0 max          0
+no work, wall outside counts, 20000 samples:
+  wall ns        min      208 p50      250 mean      258 p95      292 max       4417
+  P time ns      min       83 p50      125 mean      121 p95      125 max       4250
+  P cycles       min      383 p50      399 mean      400 p95      404 max      14079
+  P instructions min     1642 p50     1643 mean     1643 p95     1643 max       6868
+  E time ns      min        0 p50        0 mean        0 p95        0 max          0
+~1 us, counts outside wall (the samplers' order), 20000 samples:
+  wall ns        min      667 p50      833 mean      842 p95      916 max      29083
+  P time ns      min      833 p50      958 mean      964 p95     1041 max      29208
+  P cycles       min     3486 p50     3505 mean     3513 p95     3512 max     101855
+  P instructions min     4095 p50     4096 mean     4097 p95     4096 max      11145
+  E time ns      min        0 p50        0 mean        0 p95        0 max          0
+~1 us, wall outside counts, 20000 samples:
+  wall ns        min      875 p50      959 mean      978 p95     1000 max      14500
+  P time ns      min      791 p50      875 mean      865 p95      875 max      14375
+  P cycles       min     3435 p50     3452 mean     3469 p95     3460 max      56769
+  P instructions min     3938 p50     3939 mean     3941 p95     3939 max       9434
+  E time ns      min        0 p50        0 mean        0 p95        0 max          0
+~10 us, counts outside wall (the samplers' order), 20000 samples:
+  wall ns        min     6666 p50     6792 mean     6883 p95     7000 max      23875
+  P time ns      min     6833 p50     6875 mean     6983 p95     7084 max      24000
+  P cycles       min    31025 p50    31045 mean    31157 p95    31055 max     108241
+  P instructions min    24750 p50    24751 mean    24764 p95    24751 max      30345
+  E time ns      min        0 p50        0 mean        0 p95        0 max          0
+~10 us, wall outside counts, 20000 samples:
+  wall ns        min     6916 p50     6959 mean     7066 p95     7167 max      22500
+  P time ns      min     6791 p50     6875 mean     6959 p95     7042 max      22334
+  P cycles       min    30975 p50    30992 mean    31072 p95    31001 max     100929
+  P instructions min    24593 p50    24594 mean    24606 p95    24594 max      32642
+  E time ns      min        0 p50        0 mean        0 p95        0 max          0

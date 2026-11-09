@@ -1,0 +1,4 @@
+
+exit: Some(1)
+stderr:
+sudo: a password is required

@@ -1,0 +1,13 @@
+uid 502 euid 502
+kpc counters: 2 fixed, 5 configurable (5 config registers)
+direct counter reads, before any kpc setup:
+  PMC0 (cycles)  SIGILL (no user-mode access)
+  PMC1 (instrs)  SIGILL (no user-mode access)
+  PMCCNTR_EL0    SIGILL (no user-mode access)
+cost of one read:
+  wall (CLOCK_UPTIME_RAW)        23 ns wall,    41 P-cycles,    81 P-instructions per read (means of 200000)
+  thread_selfcounts             154 ns wall,   401 P-cycles,  1613 P-instructions per read (means of 200000)
+kpc_force_all_ctrs_set(1): -1, errno 1 (Operation not permitted); the rest needs root
+
+exit: Some(0)
+stderr:

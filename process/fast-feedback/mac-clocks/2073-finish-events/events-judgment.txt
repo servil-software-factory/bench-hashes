@@ -1,0 +1,90 @@
+4 pairs of runs; per message (per sample for nothing): old, new, new/old permille, verdict
+shape              event                                               old            new    ratio verdict
+mixed_128x16384    FIXED_CYCLES                                    301.016        317.541     1052 level
+mixed_128x16384    FIXED_INSTRUCTIONS                             1336.690       1336.866     1000 level
+mixed_128x16384    L1D_CACHE_MISS_LD                                21.836         21.541      986 level
+mixed_128x16384    L1D_TLB_MISS                                      4.151          4.550     1094 level
+mixed_128x16384    L1I_CACHE_MISS_DEMAND                             0.002          0.004     1407 level
+mixed_128x16384    MAP_STALL                                       156.792        172.281     1090 level
+mixed_128x16384    wall_ns                                          73.137         81.546     1112 level
+mixed_24x32768     FIXED_CYCLES                                    291.417        296.570     1018 level
+mixed_24x32768     FIXED_INSTRUCTIONS                             1391.861       1391.074      999 level
+mixed_24x32768     L1D_CACHE_MISS_LD                                21.629         21.275      984 level
+mixed_24x32768     L1D_TLB_MISS                                      6.926          6.992     1009 level
+mixed_24x32768     L1I_CACHE_MISS_DEMAND                             0.005          0.005      933 level
+mixed_24x32768     MAP_STALL                                       127.904        135.870     1062 level
+mixed_24x32768     wall_ns                                          79.066         82.661     1046 level
+mixed_8x16384      FIXED_CYCLES                                    322.218        332.658     1032 level
+mixed_8x16384      FIXED_INSTRUCTIONS                             1525.110       1524.614     1000 level
+mixed_8x16384      L1D_CACHE_MISS_LD                                19.306         18.857      976 level
+mixed_8x16384      L1D_TLB_MISS                                      5.774          5.522      956 level
+mixed_8x16384      L1I_CACHE_MISS_DEMAND                             0.012          0.009      763 level
+mixed_8x16384      MAP_STALL                                       124.726        133.094     1066 level
+mixed_8x16384      wall_ns                                          83.572         83.648     1001 level
+nothing            FIXED_CYCLES                                   2779.921       2599.617      936 level
+nothing            FIXED_INSTRUCTIONS                            12563.300      12565.503     1000 level
+nothing            L1D_CACHE_MISS_LD                                 1.695          1.289      572 level
+nothing            L1D_TLB_MISS                                      4.984          4.750      962 level
+nothing            L1I_CACHE_MISS_DEMAND                             0.550          0.832     1536 level
+nothing            MAP_STALL                                        88.660         75.289      863 level
+nothing            wall_ns                                           8.945          6.800      754 level
+plain_128x16384    FIXED_CYCLES                                    294.917        284.091      964 level
+plain_128x16384    FIXED_INSTRUCTIONS                             1337.083       1336.590     1000 level
+plain_128x16384    L1D_CACHE_MISS_LD                                21.826         21.401      981 level
+plain_128x16384    L1D_TLB_MISS                                      3.899          3.858      989 level
+plain_128x16384    L1I_CACHE_MISS_DEMAND                             0.002          0.001      705 level
+plain_128x16384    MAP_STALL                                       148.785        139.501      939 level
+plain_128x16384    wall_ns                                          70.722         63.350      896 FEWER
+plain_24x32768     FIXED_CYCLES                                    289.826        300.327     1036 level
+plain_24x32768     FIXED_INSTRUCTIONS                             1394.448       1390.877      997 level
+plain_24x32768     L1D_CACHE_MISS_LD                                21.502         20.778      966 level
+plain_24x32768     L1D_TLB_MISS                                      6.808          6.819     1002 level
+plain_24x32768     L1I_CACHE_MISS_DEMAND                             0.005          0.004      788 level
+plain_24x32768     MAP_STALL                                       124.659        137.669     1104 MORE
+plain_24x32768     wall_ns                                          83.007         67.489      813 FEWER
+plain_512x16384    FIXED_CYCLES                                    554.058        497.816      897 FEWER
+plain_512x16384    FIXED_INSTRUCTIONS                             1329.440       1328.002      999 level
+plain_512x16384    L1D_CACHE_MISS_LD                                23.060         22.576      979 level
+plain_512x16384    L1D_TLB_MISS                                     34.322         33.844      986 level
+plain_512x16384    L1I_CACHE_MISS_DEMAND                             0.001          0.001      902 level
+plain_512x16384    MAP_STALL                                       409.140        354.805      863 level
+plain_512x16384    wall_ns                                         127.087        112.408      883 level
+shared_128x32768   FIXED_CYCLES                                    308.925        327.498     1061 level
+shared_128x32768   FIXED_INSTRUCTIONS                             1336.792       1336.967     1000 level
+shared_128x32768   L1D_CACHE_MISS_LD                                21.788         21.470      985 level
+shared_128x32768   L1D_TLB_MISS                                      4.654          5.293     1111 level
+shared_128x32768   L1I_CACHE_MISS_DEMAND                             0.003          0.003     1287 level
+shared_128x32768   MAP_STALL                                       163.398        181.929     1115 level
+shared_128x32768   wall_ns                                          77.317         81.188     1045 level
+mixed_128x16384    INTERRUPT_PENDING                                                               zero in some run; unjudged
+mixed_128x16384    LDST_UNIT_WAITING_SME_ENGINE_MEM_DATA                                           zero in some run; unjudged
+mixed_128x16384    SCHEDULE_WAITING_SME_ENGINE_REG_DATA                                            zero in some run; unjudged
+mixed_128x16384    SME_ENGINE_SM_ENABLE                                                            zero in some run; unjudged
+mixed_24x32768     INTERRUPT_PENDING                                                               zero in some run; unjudged
+mixed_24x32768     LDST_UNIT_WAITING_SME_ENGINE_MEM_DATA                                           zero in some run; unjudged
+mixed_24x32768     SCHEDULE_WAITING_SME_ENGINE_REG_DATA                                            zero in some run; unjudged
+mixed_24x32768     SME_ENGINE_SM_ENABLE                                                            zero in some run; unjudged
+mixed_8x16384      INTERRUPT_PENDING                                                               zero in some run; unjudged
+mixed_8x16384      LDST_UNIT_WAITING_SME_ENGINE_MEM_DATA                                           zero in some run; unjudged
+mixed_8x16384      SCHEDULE_WAITING_SME_ENGINE_REG_DATA                                            zero in some run; unjudged
+mixed_8x16384      SME_ENGINE_SM_ENABLE                                                            zero in some run; unjudged
+nothing            INTERRUPT_PENDING                                                               zero in some run; unjudged
+nothing            LDST_UNIT_WAITING_SME_ENGINE_MEM_DATA                                           zero in some run; unjudged
+nothing            SCHEDULE_WAITING_SME_ENGINE_REG_DATA                                            zero in some run; unjudged
+nothing            SME_ENGINE_SM_ENABLE                                                            zero in some run; unjudged
+plain_128x16384    INTERRUPT_PENDING                                                               zero in some run; unjudged
+plain_128x16384    LDST_UNIT_WAITING_SME_ENGINE_MEM_DATA                                           zero in some run; unjudged
+plain_128x16384    SCHEDULE_WAITING_SME_ENGINE_REG_DATA                                            zero in some run; unjudged
+plain_128x16384    SME_ENGINE_SM_ENABLE                                                            zero in some run; unjudged
+plain_24x32768     INTERRUPT_PENDING                                                               zero in some run; unjudged
+plain_24x32768     LDST_UNIT_WAITING_SME_ENGINE_MEM_DATA                                           zero in some run; unjudged
+plain_24x32768     SCHEDULE_WAITING_SME_ENGINE_REG_DATA                                            zero in some run; unjudged
+plain_24x32768     SME_ENGINE_SM_ENABLE                                                            zero in some run; unjudged
+plain_512x16384    INTERRUPT_PENDING                                                               zero in some run; unjudged
+plain_512x16384    LDST_UNIT_WAITING_SME_ENGINE_MEM_DATA                                           zero in some run; unjudged
+plain_512x16384    SCHEDULE_WAITING_SME_ENGINE_REG_DATA                                            zero in some run; unjudged
+plain_512x16384    SME_ENGINE_SM_ENABLE                                                            zero in some run; unjudged
+shared_128x32768   INTERRUPT_PENDING                                                               zero in some run; unjudged
+shared_128x32768   LDST_UNIT_WAITING_SME_ENGINE_MEM_DATA                                           zero in some run; unjudged
+shared_128x32768   SCHEDULE_WAITING_SME_ENGINE_REG_DATA                                            zero in some run; unjudged
+shared_128x32768   SME_ENGINE_SM_ENABLE                                                            zero in some run; unjudged

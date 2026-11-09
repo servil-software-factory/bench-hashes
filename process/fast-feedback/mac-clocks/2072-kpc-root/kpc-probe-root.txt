@@ -1,0 +1,59 @@
+uid 0 euid 0
+kpc counters: 2 fixed, 5 configurable (5 config registers)
+direct counter reads, before any kpc setup:
+  PMC0 (cycles)  SIGILL (no user-mode access)
+  PMC1 (instrs)  SIGILL (no user-mode access)
+  PMCCNTR_EL0    SIGILL (no user-mode access)
+cost of one read:
+  wall (CLOCK_UPTIME_RAW)        19 ns wall,    41 P-cycles,    81 P-instructions per read (means of 200000)
+  thread_selfcounts             143 ns wall,   398 P-cycles,  1613 P-instructions per read (means of 200000)
+event database: Apple silicon, 104 events
+events: FIXED_CYCLES FIXED_INSTRUCTIONS ARM_L1D_CACHE_REFILL ARM_L1D_CACHE INST_ALL ARM_BR_MIS_PRED CORE_ACTIVE_CYCLE ARM_BR_PRED INST_BRANCH BRANCH_MISPRED_NONSPEC ARM_STALL_FRONTEND ARM_STALL_BACKEND ARM_L1D_CACHE_LMISS_RD RETIRE_UOP MAP_UOP ARM_STALL ARM_STALL_SLOT_BACKEND ARM_STALL_SLOT_FRONTEND ARM_STALL_SLOT ARM_L1D_CACHE_RD MAP_DISPATCH_BUBBLE_IC MAP_DISPATCH_BUBBLE_ITLB DECODE_UOP L1I_TLB_MISS_DEMAND MAP_DISPATCH_BUBBLE FETCH_RESTART MAP_DISPATCH_BUBBLE_SLOT INTERRUPT_PENDING MAP_STALL_DISPATCH MAP_REWIND MAP_STALL MAP_INT_UOP MAP_LDST_UOP MAP_SIMD_UOP SCHEDULE_UOP_ANY MAP_INT_SME_UOP SME_ENGINE_SM_ENABLE SME_ENGINE_SM_ZA_ENABLE SME_ENGINE_ZA_ENABLED_SM_DISABLED LDST_UNIT_WAITING_SME_ENGINE_INST_QUEUE_FULL SCHEDULE_WAITING_SME_ENGINE_REG_DATA LDST_UNIT_WAITING_SME_ENGINE_MEM_DATA LDST_UNIT_OLD_L1D_CACHE_MISS LDST_UNIT_WAITING_OLD_L1D_CACHE_MISS LD_UNIT_WAITING_YOUNG_L1D_CACHE_MISS MAP_RECOVERY MAP_STALL_NONRECOVERY SCHEDULE_EMPTY L1I_TLB_FILL L1D_TLB_FILL MMU_TABLE_WALK_INSTRUCTION MMU_TABLE_WALK_DATA L2_TLB_MISS_INSTRUCTION L2_TLB_MISS_DATA LDST_SME_XPG_UOP INST_SME_ENGINE_PACKING_FUSED LD_BLOCKED_BY_SME_LDST ST_BARRIER_BLOCKED_BY_SME_LDST LD_SME_NT_UOP ST_SME_NT_UOP LD_SME_NORMAL_UOP ST_SME_NORMAL_UOP LDST_SME_PRED_INACTIVE L1D_TLB_ACCESS L1D_TLB_MISS L1D_CACHE_MISS_ST L1D_CACHE_MISS_LD LD_UNIT_UOP ST_UNIT_UOP L1D_CACHE_WRITEBACK LDST_X64_UOP LDST_XPG_UOP ATOMIC_OR_EXCLUSIVE_SUCC ATOMIC_OR_EXCLUSIVE_FAIL ST_NT_UOP LD_NT_UOP FLUSH_RESTART_OTHER_NONSPEC INST_BRANCH_CALL INST_BRANCH_RET INST_BRANCH_TAKEN INST_BRANCH_INDIR INST_BRANCH_COND INST_INT_LD INST_INT_ST INST_INT_ALU INST_SIMD_LD INST_SIMD_ST INST_SIMD_ALU INST_LDST INST_BARRIER INST_SIMD_ALU_VEC INST_SME_ENGINE_SCALARFP INST_SME_ENGINE_LD INST_SME_ENGINE_ST INST_SME_ENGINE_ALU L1D_CACHE_MISS_LD_NONSPEC L1D_CACHE_MISS_ST_NONSPEC L1D_TLB_MISS_NONSPEC ST_MEM_ORDER_VIOL_LD_NONSPEC BRANCH_COND_MISPRED_NONSPEC BRANCH_INDIR_MISPRED_NONSPEC BRANCH_RET_INDIR_MISPRED_NONSPEC BRANCH_CALL_INDIR_MISPRED_NONSPEC L1I_CACHE_MISS_DEMAND
+  no event L2_TLB_MISS here
+  cannot add BRANCH_MISPRED_NONSPEC (error 252: counters full or incompatible)
+counting classes 0x3, 10 counters; configured: FIXED_CYCLES@0 FIXED_INSTRUCTIONS@1 L1D_CACHE_MISS_LD@2 L1D_CACHE_MISS_ST@3 L1D_TLB_MISS@4 L1I_CACHE_MISS_DEMAND@5 MAP_STALL_DISPATCH@6 MAP_STALL@7 INTERRUPT_PENDING@8
+direct counter reads, with kpc counting on:
+  PMC0 (cycles)  SIGILL (no user-mode access)
+  PMC1 (instrs)  SIGILL (no user-mode access)
+  PMCCNTR_EL0    SIGILL (no user-mode access)
+cost of one read, kpc on:
+  wall (CLOCK_UPTIME_RAW)        12 ns wall,    41 P-cycles,    81 P-instructions per read (means of 200000)
+  thread_selfcounts             110 ns wall,   397 P-cycles,  1613 P-instructions per read (means of 200000)
+  kpc_get_thread_counters       578 ns wall,  2391 P-cycles, 12370 P-instructions per read (means of 200000)
+spin: 953792 ns per 1e6 rounds; 1048 rounds per us
+no work, counts outside wall (the samplers' order), 20000 samples:
+  wall ns                    min        0 p50        0 mean        7 p95       42 max         83
+  FIXED_CYCLES               min     2194 p50     2402 mean     2411 p95     2472 max      48354
+  FIXED_INSTRUCTIONS         min    12513 p50    12521 mean    12523 p95    12533 max      17562
+  L1D_CACHE_MISS_LD          min        0 p50        0 mean        0 p95        0 max          9
+  L1D_CACHE_MISS_ST          min        0 p50        0 mean        0 p95        0 max          4
+  L1D_TLB_MISS               min        3 p50        3 mean        4 p95        6 max         10
+  L1I_CACHE_MISS_DEMAND      min        0 p50        0 mean        0 p95        0 max          3
+  MAP_STALL_DISPATCH         min        0 p50        0 mean        0 p95        0 max          0
+  MAP_STALL                  min       54 p50       70 mean       76 p95       76 max        882
+  INTERRUPT_PENDING          min        0 p50        0 mean        0 p95        0 max          0
+~1 us, counts outside wall (the samplers' order), 20000 samples:
+  wall ns                    min      833 p50      917 mean      937 p95      959 max      18500
+  FIXED_CYCLES               min     6368 p50     6671 mean     6679 p95     6775 max      64868
+  FIXED_INSTRUCTIONS         min    15626 p50    15666 mean    15667 p95    15676 max      29574
+  L1D_CACHE_MISS_LD          min        0 p50        0 mean        0 p95        0 max         23
+  L1D_CACHE_MISS_ST          min        0 p50        0 mean        0 p95        0 max          9
+  L1D_TLB_MISS               min        2 p50        2 mean        2 p95        2 max         34
+  L1I_CACHE_MISS_DEMAND      min        0 p50        0 mean        0 p95        0 max         18
+  MAP_STALL_DISPATCH         min     2903 p50     3315 mean     3312 p95     3318 max       4061
+  MAP_STALL                  min     3239 p50     3639 mean     3638 p95     3644 max       4229
+  INTERRUPT_PENDING          min        0 p50        0 mean        0 p95        0 max          0
+~10 us, counts outside wall (the samplers' order), 20000 samples:
+  wall ns                    min     9166 p50     9292 mean     9382 p95     9500 max      25833
+  FIXED_CYCLES               min    44139 p50    44315 mean    44443 p95    44484 max     119038
+  FIXED_INSTRUCTIONS         min    43944 p50    43964 mean    43981 p95    43972 max      58725
+  L1D_CACHE_MISS_LD          min        0 p50        0 mean        0 p95        0 max         67
+  L1D_CACHE_MISS_ST          min        0 p50        0 mean        0 p95        0 max          2
+  L1D_TLB_MISS               min        2 p50        2 mean        2 p95        2 max         20
+  L1I_CACHE_MISS_DEMAND      min        0 p50        0 mean        0 p95        0 max         16
+  MAP_STALL_DISPATCH         min    35750 p50    36317 mean    36315 p95    36320 max      37515
+  MAP_STALL                  min    36088 p50    36657 mean    36666 p95    36671 max      37662
+  INTERRUPT_PENDING          min        0 p50        0 mean        0 p95        0 max          0
+
+exit: Some(0)
+stderr:
