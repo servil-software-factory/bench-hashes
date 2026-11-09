@@ -1,0 +1,7 @@
+warning: /workspace/blake3-servil/tmp/runs/grouped-typed-vm/aa/bench/Cargo.toml: version requirement `=0.1.0+81af550bfd3eb2aff85c3ddf0a21446e78a1809d` for dependency `sigilcode` includes semver metadata which will be ignored, removing the metadata is recommended to avoid confusion
+warning: /workspace/blake3-servil/tmp/runs/grouped-typed-vm/aa/bench/Cargo.toml: version requirement `=0.1.0+81af550bfd3eb2aff85c3ddf0a21446e78a1809d` for dependency `sigilcode` includes semver metadata which will be ignored, removing the metadata is recommended to avoid confusion
+warning: `bench-hashes` (manifest) generated 2 warnings
+     Locking 1 package to latest compatible version
+   Compiling clocks v0.1.0 (/workspace/blake3-servil/tmp/runs/grouped-typed-vm/aa/bench/clocks)
+   Compiling incrementalrootjudge v0.1.0 (/workspace/blake3-servil/tmp/runs/grouped-typed-vm/aa/judge)
+    Finished `release` profile [optimized] target(s) in 1.49s

@@ -1,0 +1,14 @@
+   Compiling blake3-servil v0.8.0+b3c5efc7c975d903762dea809066f7c0a0603861 (/workspace/blake3-servil/tmp/wt-grouped-noalloc)
+    Finished `release` profile [optimized] target(s) in 1.25s
+────────────
+ Nextest run ID f9a1935f-169d-463d-8b69-d0da9be9b7c1 with nextest profile: default
+    Starting 7 tests across 1 binary (1 test skipped)
+        PASS [   0.002s] (1/7) blake3-servil::allocations allocation_counter_sees_a_callers_allocation
+        PASS [   0.002s] (2/7) blake3-servil::allocations worker_counter_sees_an_owned_background_allocation
+        PASS [   0.002s] (3/7) blake3-servil::allocations require_nextest::aaa_require_nextest
+        PASS [   0.002s] (4/7) blake3-servil::allocations resource_admission_allocates_nothing_when_ready_or_waiting
+        PASS [   0.003s] (5/7) blake3-servil::allocations single_threaded_calls_allocate_as_the_memory_section_says
+        PASS [   0.084s] (6/7) blake3-servil::allocations grouped_fragmentation_reuses_storage_at_table_boundaries
+        PASS [   0.100s] (7/7) blake3-servil::allocations grouped_cycles_reuse_storage_for_every_key_prefix
+────────────
+     Summary [   0.100s] 7 tests run: 7 passed, 1 skipped

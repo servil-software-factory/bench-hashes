@@ -1,0 +1,12 @@
+warning: /workspace/blake3-servil/tmp/runs/grouped-typed-vm/aa/bench/Cargo.toml: version requirement `=0.1.0+81af550bfd3eb2aff85c3ddf0a21446e78a1809d` for dependency `sigilcode` includes semver metadata which will be ignored, removing the metadata is recommended to avoid confusion
+warning: /workspace/blake3-servil/tmp/runs/grouped-typed-vm/aa/bench/Cargo.toml: version requirement `=0.1.0+81af550bfd3eb2aff85c3ddf0a21446e78a1809d` for dependency `sigilcode` includes semver metadata which will be ignored, removing the metadata is recommended to avoid confusion
+warning: `bench-hashes` (manifest) generated 2 warnings
+   Compiling clocks v0.1.0 (/workspace/blake3-servil/tmp/runs/grouped-typed-vm/aa/bench/clocks)
+   Compiling incrementalrootjudge v0.1.0 (/workspace/blake3-servil/tmp/runs/grouped-typed-vm/aa/judge)
+    Finished `release` profile [optimized] target(s) in 1.35s
+────────────
+ Nextest run ID dbb788b1-d5ee-4993-9818-24bf52ec39af with nextest profile: default
+    Starting 1 test across 1 binary
+        PASS [   0.002s] (1/1) incrementalrootjudge::bin/incrementalrootjudge per_item_rounds_with_integers
+────────────
+     Summary [   0.002s] 1 test run: 1 passed, 0 skipped

@@ -1,0 +1,43 @@
+   Compiling blake3-servil v0.8.0+b3c5efc7c975d903762dea809066f7c0a0603861 (/workspace/blake3-servil/tmp/wt-grouped-noalloc)
+warning: method `add` is never used
+  --> tests/allocations.rs:63:8
+   |
+54 | impl AtomicCounts {
+   | ----------------- method in this implementation
+...
+63 |     fn add(&self, c: Counts) {
+   |        ^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `blake3-servil` (test "allocations") generated 1 warning
+    Finished `release` profile [optimized] target(s) in 1.24s
+────────────
+ Nextest run ID dec645ff-8cee-4f95-8c92-f581f29af927 with nextest profile: default
+    Starting 1 test across 1 binary (7 tests skipped)
+        FAIL [   0.002s] (1/1) blake3-servil::allocations worker_counter_sees_an_owned_background_allocation
+  stdout ───
+
+    running 1 test
+    test worker_counter_sees_an_owned_background_allocation ... FAILED
+
+    failures:
+
+    failures:
+        worker_counter_sees_an_owned_background_allocation
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'worker_counter_sees_an_owned_background_allocation' (11503) panicked at tests/allocations.rs:202:5:
+    assertion `left == right` failed
+      left: Counts { allocations: 0, reallocations: 0, deallocations: 0, bytes: 0 }
+     right: Counts { allocations: 1, reallocations: 0, deallocations: 1, bytes: 4096 }
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure
+────────────
+     Summary [   0.002s] 1 test run: 0 passed, 1 failed, 7 skipped
+        FAIL [   0.002s] (1/1) blake3-servil::allocations worker_counter_sees_an_owned_background_allocation
+error: test run failed

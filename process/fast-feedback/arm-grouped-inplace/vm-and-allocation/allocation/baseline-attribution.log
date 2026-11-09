@@ -1,0 +1,32 @@
+   Compiling blake3-servil v0.8.0+b3c5efc7c975d903762dea809066f7c0a0603861 (/workspace/blake3-servil/tmp/wt-grouped-noalloc)
+    Finished `release` profile [optimized] target(s) in 1.25s
+────────────
+ Nextest run ID 53bb2fcf-ce01-438f-a60d-e62c2ef15afb with nextest profile: default
+    Starting 1 test across 1 binary (7 tests skipped)
+        FAIL [   0.008s] (1/1) blake3-servil::allocations prepared_multithreaded_cycles_include_the_workers
+  stdout ───
+
+    running 1 test
+    test prepared_multithreaded_cycles_include_the_workers ... FAILED
+
+    failures:
+
+    failures:
+        prepared_multithreaded_cycles_include_the_workers
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.01s
+
+  stderr ───
+    OBSERVED caller=Counts { allocations: 25, reallocations: 0, deallocations: 24, bytes: 26752 } workers=Counts { allocations: 0, reallocations: 0, deallocations: 0, bytes: 0 }
+
+    thread 'prepared_multithreaded_cycles_include_the_workers' (11037) panicked at tests/allocations.rs:233:9:
+    assertion `left == right` failed: prepared worker cycles, shared=true
+      left: Counts { allocations: 25, reallocations: 0, deallocations: 24, bytes: 26752 }
+     right: Counts { allocations: 0, reallocations: 0, deallocations: 0, bytes: 0 }
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure
+────────────
+     Summary [   0.008s] 1 test run: 0 passed, 1 failed, 7 skipped
+        FAIL [   0.008s] (1/1) blake3-servil::allocations prepared_multithreaded_cycles_include_the_workers
+error: test run failed

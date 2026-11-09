@@ -1,0 +1,22 @@
+{
+  "status": "complete",
+  "family": "next",
+  "kind": "ab",
+  "judgments": {
+    "update": {
+      "Faster": 60,
+      "Level": 68,
+      "Slower": 0
+    },
+    "cycle": {
+      "Faster": 64,
+      "Level": 64,
+      "Slower": 0
+    },
+    "finish": {
+      "Faster": 0,
+      "Level": 124,
+      "Slower": 4
+    }
+  }
+}

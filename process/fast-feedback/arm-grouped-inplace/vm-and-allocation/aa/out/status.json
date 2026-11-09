@@ -1,0 +1,22 @@
+{
+  "status": "complete",
+  "family": "next",
+  "kind": "aa",
+  "judgments": {
+    "update": {
+      "Faster": 0,
+      "Level": 128,
+      "Slower": 0
+    },
+    "cycle": {
+      "Faster": 0,
+      "Level": 128,
+      "Slower": 0
+    },
+    "finish": {
+      "Faster": 0,
+      "Level": 128,
+      "Slower": 0
+    }
+  }
+}

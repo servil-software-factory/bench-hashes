@@ -1,0 +1,16 @@
+warning: /workspace/blake3-servil/tmp/runs/grouped-typed-vm-local/ab/bench/Cargo.toml: version requirement `=0.1.0+81af550bfd3eb2aff85c3ddf0a21446e78a1809d` for dependency `sigilcode` includes semver metadata which will be ignored, removing the metadata is recommended to avoid confusion
+warning: /workspace/blake3-servil/tmp/runs/grouped-typed-vm-local/ab/bench/Cargo.toml: version requirement `=0.1.0+81af550bfd3eb2aff85c3ddf0a21446e78a1809d` for dependency `sigilcode` includes semver metadata which will be ignored, removing the metadata is recommended to avoid confusion
+warning: `bench-hashes` (manifest) generated 2 warnings
+     Locking 11 packages to latest compatible versions
+   Compiling find-msvc-tools v0.1.15
+   Compiling shlex v2.0.1
+   Compiling libc v0.2.191
+   Compiling arrayvec v0.7.8
+   Compiling cfg-if v1.0.5
+   Compiling constant_time_eq v0.4.2
+   Compiling clocks v0.1.0 (/workspace/blake3-servil/tmp/runs/grouped-typed-vm-local/ab/bench/clocks)
+   Compiling cc v1.11.1
+   Compiling blake3 v1.8.7
+   Compiling blake3-servil v0.8.0+b3c5efc7c975d903762dea809066f7c0a0603861 (/workspace/blake3-servil/tmp/runs/grouped-typed-vm-local/ab/old)
+   Compiling incrementalroots v0.1.0 (/workspace/blake3-servil/tmp/runs/grouped-typed-vm-local/ab/project-old-4)
+    Finished `release` profile [optimized] target(s) in 2.62s

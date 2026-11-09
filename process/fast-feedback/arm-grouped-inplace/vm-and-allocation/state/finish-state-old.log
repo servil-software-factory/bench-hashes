@@ -1,0 +1,21 @@
+   Compiling blake3-servil v0.8.0+b3c5efc7c975d903762dea809066f7c0a0603861 (/workspace/blake3-servil/tmp/wt-finish-state-old)
+    Finished `release` profile [optimized] target(s) in 4.37s
+────────────
+ Nextest run ID 666b3359-7697-469b-97d6-083004d8d425 with nextest profile: default
+    Starting 1 test across 1 binary (166 tests skipped)
+        PASS [   0.005s] (1/1) blake3-servil incremental::finish_shape_state_probe
+  stdout ───
+
+    running 1 test
+    test incremental::finish_shape_state_probe ... ok
+
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 166 filtered out; finished in 0.00s
+
+  stderr ───
+    STATE_SOURCE=old n=24 len=32768 states={(0, 2, 32, 0, 0, 7, 0)}
+    STATE_SOURCE=old n=512 len=16384 states={(0, 2, 16, 0, 0, 7, 0)}
+    STATE_SOURCE=old n=128 len=16384 states={(0, 2, 16, 0, 0, 7, 0)}
+    STATE_SOURCE=old n=8 len=16384 states={(0, 2, 16, 0, 0, 7, 0)}
+
+────────────
+     Summary [   0.007s] 1 test run: 1 passed, 166 skipped
