@@ -1,0 +1,11 @@
+finalization_contract=next: finalize_each resets; no additional cycle/finish reset
+preflight: quiet wait and timing skipped
+ownership: one caller owns states/descriptors/outputs; open=2 active=2; hasher_size=18432 align=64 native_stride=18432 digest_stride=32; no concurrent sharing
+constructors/keys/data/caller capacity outside counters; cycle includes descriptor refill, library allocations, updates, digest/reset; update includes selected reset+refill+updates, digest outside; finish prepares a cohort outside counters and consumes/resets it ONCE,64 samples,clock bookkeeping included,energy NA
+core_counts shape=plain_open2_len16384_piece4096 items=2 algorithm=update calls=1 p_time_ns=NA p_cycles=NA p_instructions=NA e_time_ns=NA e_cycles=NA e_instructions=NA
+
+thread 'main' (19081229) panicked at src/main.rs:117:9:
+assertion `left == right` failed: update canonical digest
+  left: [[85, 163, 170, 153, 96, 126, 20, 72, 66, 236, 19, 121, 233, 130, 67, 217, 239, 38, 117, 13, 227, 49, 142, 192, 17, 204, 222, 63, 124, 91, 248, 166], [77, 134, 134, 142, 189, 216, 185, 227, 26, 87, 36, 186, 118, 202, 2, 150, 253, 59, 129, 178, 240, 225, 77, 95, 144, 242, 160, 228, 44, 248, 103, 69]]
+ right: [[84, 163, 170, 153, 96, 126, 20, 72, 66, 236, 19, 121, 233, 130, 67, 217, 239, 38, 117, 13, 227, 49, 142, 192, 17, 204, 222, 63, 124, 91, 248, 166], [77, 134, 134, 142, 189, 216, 185, 227, 26, 87, 36, 186, 118, 202, 2, 150, 253, 59, 129, 178, 240, 225, 77, 95, 144, 242, 160, 228, 44, 248, 103, 69]]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

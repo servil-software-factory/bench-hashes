@@ -1,0 +1,23 @@
+warning: /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/aa/bench/Cargo.toml: version requirement `=0.1.0+81af550bfd3eb2aff85c3ddf0a21446e78a1809d` for dependency `sigilcode` includes semver metadata which will be ignored, removing the metadata is recommended to avoid confusion
+warning: /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/aa/bench/Cargo.toml: version requirement `=0.1.0+81af550bfd3eb2aff85c3ddf0a21446e78a1809d` for dependency `sigilcode` includes semver metadata which will be ignored, removing the metadata is recommended to avoid confusion
+warning: `bench-hashes` (manifest) generated 2 warnings
+   Compiling incrementalroots v0.1.0 (/Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/aa/project-new-1)
+error[E0428]: the name `FINALIZATION_CONTRACT` is defined multiple times
+ --> src/main.rs:7:1
+  |
+5 | const FINALIZATION_CONTRACT: &str = "main: finalize_each reads; explicit reset is inside cycle/finish work";
+  | ------------------------------------------------------------------------------------------------------------ previous definition of the value `FINALIZATION_CONTRACT` here
+6 | #[cfg(feature = "next-api")]
+7 | const FINALIZATION_CONTRACT: &str = "next: finalize_each resets; no additional cycle/finish reset";
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `FINALIZATION_CONTRACT` redefined here
+  |
+  = note: `FINALIZATION_CONTRACT` must be defined only once in the value namespace of this module
+
+error: select exactly one finalization contract: main-api or next-api
+ --> src/main.rs:3:1
+  |
+3 | compile_error!("select exactly one finalization contract: main-api or next-api");
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0428`.
+error: could not compile `incrementalroots` (bin "incrementalroots") due to 2 previous errors

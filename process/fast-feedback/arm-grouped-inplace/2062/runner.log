@@ -1,0 +1,77 @@
+$ (cd /Users/benchrunner/checkouts/fork && git fetch --quiet --prune origin)
+$ (cd /Users/benchrunner/checkouts/fork && git checkout --quiet --force --detach 12a13061548ddf60c6233797fcc484adb4696a94)
+$ (cd /Users/benchrunner/checkouts/fork && git rev-parse HEAD)
+$ (cd /Users/benchrunner/checkouts/fork && git clean -ffd --quiet)
+$ (cd /Users/benchrunner/checkouts/fork && cargo build --release --example host_lab)
+   Compiling blake3-servil v0.8.0+b3c5efc7c975d903762dea809066f7c0a0603861 (/Users/benchrunner/checkouts/fork)
+    Finished `release` profile [optimized] target(s) in 2.60s
+$ (cd /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821 && /Users/benchrunner/checkouts/fork/target/release/examples/host_lab next)
++ git fetch https://github.com/servil-software-factory/BLAKE3 0b5bf7b71cb5f850067fa4182d9a3c724d7e5710
+From https://github.com/servil-software-factory/BLAKE3
+ * branch              0b5bf7b71cb5f850067fa4182d9a3c724d7e5710 -> FETCH_HEAD
++ git worktree add --detach /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/aa/old 0b5bf7b71cb5f850067fa4182d9a3c724d7e5710
+Preparing worktree (detached HEAD 0b5bf7b7)
+HEAD is now at 0b5bf7b7 Document the key-independent timing contract at the API boundary
++ git worktree add --detach /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/aa/new 0b5bf7b71cb5f850067fa4182d9a3c724d7e5710
+Preparing worktree (detached HEAD 0b5bf7b7)
+HEAD is now at 0b5bf7b7 Document the key-independent timing contract at the API boundary
++ git clone --no-checkout https://github.com/servil-software-factory/bench-hashes /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/aa/bench
+Cloning into '/Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/aa/bench'...
++ git fetch https://github.com/servil-software-factory/bench-hashes 9994de190259648ede82f7c5e4dbac4f1534a41d
+From https://github.com/servil-software-factory/bench-hashes
+ * branch            9994de190259648ede82f7c5e4dbac4f1534a41d -> FETCH_HEAD
++ git checkout --detach 9994de190259648ede82f7c5e4dbac4f1534a41d
+HEAD is now at 9994de1 Merge #136: untrack a probe's run outputs
++ cargo build --release
++ cargo nextest run --release --locked
++ cargo build --release --features next-api
++ cargo build --release --features next-api
++ cargo build --release --locked
++ cargo build --release --locked --features main-api,next-api
++ cargo build --release --locked --features next-api
++ cargo build --release --features next-api
++ cargo build --release --features next-api
++ cargo build --release --features next-api
++ cargo build --release --features next-api
++ cargo build --release --features next-api
++ cargo build --release --features next-api
++ /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/aa/targets/target-judge/release/incrementalrootjudge /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/aa/out update
++ /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/aa/targets/target-judge/release/incrementalrootjudge /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/aa/out cycle
++ /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/aa/targets/target-judge/release/incrementalrootjudge /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/aa/out finish
+{"cycle": {"Faster": 0, "Level": 256, "Slower": 0}, "finish": {"Faster": 0, "Level": 256, "Slower": 0}, "update": {"Faster": 0, "Level": 256, "Slower": 0}}
++ git fetch https://github.com/servil-software-factory/BLAKE3 0b5bf7b71cb5f850067fa4182d9a3c724d7e5710
+From https://github.com/servil-software-factory/BLAKE3
+ * branch              0b5bf7b71cb5f850067fa4182d9a3c724d7e5710 -> FETCH_HEAD
++ git fetch https://github.com/servil-software-factory/BLAKE3 f13933376c8b8236adaeffe6aa9d25ad25f2af24
+From https://github.com/servil-software-factory/BLAKE3
+ * branch              f13933376c8b8236adaeffe6aa9d25ad25f2af24 -> FETCH_HEAD
++ git worktree add --detach /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/ab/old 0b5bf7b71cb5f850067fa4182d9a3c724d7e5710
+Preparing worktree (detached HEAD 0b5bf7b7)
+HEAD is now at 0b5bf7b7 Document the key-independent timing contract at the API boundary
++ git worktree add --detach /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/ab/new f13933376c8b8236adaeffe6aa9d25ad25f2af24
+Preparing worktree (detached HEAD f1393337)
+HEAD is now at f1393337 Derive grouped parent descriptors from their typed rows
++ git clone --no-checkout https://github.com/servil-software-factory/bench-hashes /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/ab/bench
+Cloning into '/Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/ab/bench'...
++ git fetch https://github.com/servil-software-factory/bench-hashes 9994de190259648ede82f7c5e4dbac4f1534a41d
+From https://github.com/servil-software-factory/bench-hashes
+ * branch            9994de190259648ede82f7c5e4dbac4f1534a41d -> FETCH_HEAD
++ git checkout --detach 9994de190259648ede82f7c5e4dbac4f1534a41d
+HEAD is now at 9994de1 Merge #136: untrack a probe's run outputs
++ cargo build --release
++ cargo nextest run --release --locked
++ cargo build --release --features next-api
++ cargo build --release --features next-api
++ cargo build --release --locked
++ cargo build --release --locked --features main-api,next-api
++ cargo build --release --locked --features next-api
++ cargo build --release --features next-api
++ cargo build --release --features next-api
++ cargo build --release --features next-api
++ cargo build --release --features next-api
++ cargo build --release --features next-api
++ cargo build --release --features next-api
++ /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/ab/targets/target-judge/release/incrementalrootjudge /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/ab/out update
++ /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/ab/targets/target-judge/release/incrementalrootjudge /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/ab/out cycle
++ /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/ab/targets/target-judge/release/incrementalrootjudge /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/ab/out finish
+{"cycle": {"Faster": 220, "Level": 36, "Slower": 0}, "finish": {"Faster": 9, "Level": 243, "Slower": 4}, "update": {"Faster": 224, "Level": 32, "Slower": 0}}

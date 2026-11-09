@@ -1,0 +1,11 @@
+warning: /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/aa/bench/Cargo.toml: version requirement `=0.1.0+81af550bfd3eb2aff85c3ddf0a21446e78a1809d` for dependency `sigilcode` includes semver metadata which will be ignored, removing the metadata is recommended to avoid confusion
+warning: /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/aa/bench/Cargo.toml: version requirement `=0.1.0+81af550bfd3eb2aff85c3ddf0a21446e78a1809d` for dependency `sigilcode` includes semver metadata which will be ignored, removing the metadata is recommended to avoid confusion
+warning: `bench-hashes` (manifest) generated 2 warnings
+   Compiling incrementalrootjudge v0.1.0 (/Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/aa/judge)
+    Finished `release` profile [optimized] target(s) in 0.09s
+────────────
+ Nextest run ID f1f7d38c-5192-44fc-85dd-bea5c845b6bd with nextest profile: default
+    Starting 1 test across 1 binary
+        PASS [   0.007s] (1/1) incrementalrootjudge::bin/incrementalrootjudge per_item_rounds_with_integers
+────────────
+     Summary [   0.007s] 1 test run: 1 passed, 0 skipped

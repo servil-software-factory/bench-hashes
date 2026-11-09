@@ -1,0 +1,17 @@
+warning: /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/aa/bench/Cargo.toml: version requirement `=0.1.0+81af550bfd3eb2aff85c3ddf0a21446e78a1809d` for dependency `sigilcode` includes semver metadata which will be ignored, removing the metadata is recommended to avoid confusion
+warning: /Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/aa/bench/Cargo.toml: version requirement `=0.1.0+81af550bfd3eb2aff85c3ddf0a21446e78a1809d` for dependency `sigilcode` includes semver metadata which will be ignored, removing the metadata is recommended to avoid confusion
+warning: `bench-hashes` (manifest) generated 2 warnings
+    Updating crates.io index
+     Locking 11 packages to latest compatible versions
+   Compiling find-msvc-tools v0.1.15
+   Compiling shlex v2.0.1
+   Compiling libc v0.2.191
+   Compiling constant_time_eq v0.4.2
+   Compiling arrayvec v0.7.8
+   Compiling cfg-if v1.0.5
+   Compiling clocks v0.1.0 (/Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/aa/bench/clocks)
+   Compiling cc v1.11.1
+   Compiling blake3-servil v0.8.0+b3c5efc7c975d903762dea809066f7c0a0603861 (/Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/aa/old)
+   Compiling blake3 v1.8.7
+   Compiling incrementalroots v0.1.0 (/Users/donaldturnworth/piplayground/blake3-servil/blake3-servil/runner/results/2062-grouped-typed-cycles.20261109-024821/aa/project-old-2)
+    Finished `release` profile [optimized] target(s) in 3.47s

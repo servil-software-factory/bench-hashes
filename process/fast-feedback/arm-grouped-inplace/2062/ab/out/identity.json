@@ -1,0 +1,14 @@
+{
+  "adapter": "12a13061548ddf60c6233797fcc484adb4696a94",
+  "adapter_working_tree": "",
+  "instrument": "0b2e9892f6cb30e38ddce5ba82ad7b8d85f060d0",
+  "instrument_git_blob": "f69215451ba791697ad93c403a596e97f57836fd",
+  "bench": "9994de190259648ede82f7c5e4dbac4f1534a41d",
+  "libraries": {
+    "old": "0b5bf7b71cb5f850067fa4182d9a3c724d7e5710",
+    "new": "f13933376c8b8236adaeffe6aa9d25ad25f2af24"
+  },
+  "family": "next",
+  "kind": "ab",
+  "rustc": "rustc 1.98.0-nightly (f428d123a 2026-06-19)"
+}
