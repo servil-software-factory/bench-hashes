@@ -26,3 +26,9 @@ This is partial recovery against the safe selector, not acceptance against
 the earlier equality-dependent code. Candidate branches remain prepared.
 
 Only text evidence is included. Build trees and executable files stay local.
+
+[Sam’s offline attribution](https://github.com/samshackleton-tech/bench-hashes/blob/843d8382b3ae7444aa469ca780286c015501f5f6/process/fast-feedback/independent-integration/reviewed-base/BOUNDED-DIAGNOSIS.md)
+finds all four cycle findings P-only, with slightly lower cycles/ns.
+Counters bracket more work than wall time: their P-time-minus-wall gaps
+grow 2.82–7.11ns/message. A matched reader/timer-bookkeeping control is
+still needed. The four Slower cycle verdicts remain recorded.

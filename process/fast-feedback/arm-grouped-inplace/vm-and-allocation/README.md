@@ -29,25 +29,28 @@ findings also remain open. See sibling2062 for its native rows.
 The probes are BLAKE3-Servil `566f66ec90e08e9ef908b402253962920c543e9f`
 (old) and `aa8b1631472e2404a87e063826f302fc53aa3bb7` (new). They log
 only lengths/counters, public flags and platform, with golden output checks.
-All hashers on both slower shapes and two controls have staged length0,
-stack depth2, chunk counter16 or32, chunk bytes0, mode flags0,
-platform7 and initial counter0. One added input byte moves staged length
-to1: the observation distinguishes shape changes. The initial root-block
+Under identity caller order, all hashers on both slower shapes and two
+controls have staged length 0, stack depth 2, chunk counter 16 or 32,
+chunk bytes 0, mode flags 0, platform 7 and initial counter 0. One added input byte moves staged length
+to 1: the observation distinguishes shape changes. The initial root-block
 counter covers XOF rather than this root-hash call, so the committed
-probes use shape alone. The matched metadata rules out extra staged bytes
-or a deeper stored tree. Code generation and machine state still need
-attribution; this is not a cache-cause verdict.
+probes use shape alone. The matched metadata shows no stored-shape difference in this identity-order
+control. The timed sampler uses a 61-permuted caller order. Code generation,
+caller order and machine state still need attribution. This is not a
+cache-cause verdict.
 
 ## Rust allocator observation
 
 Probe `eddedc1ee172195cb1b6f9678addd56c7a37dbde` retains f139's runtime.
-Its new large-cycle assertion intentionally fails:25allocations,0reallocations,
-24frees and26,752requested bytes over three4MiB/four-mode cycles.
-Attribution puts them on the caller, with0observed named-worker requests.
+Its new large-cycle assertion intentionally fails: 25 allocations,
+0 reallocations, 24 frees and 26,752 requested bytes. The observed first
+shared-key case runs three cycles of four 4MiB messages, with plain,
+keyed and derived modes.
+Attribution puts them on the caller, with 0 observed named-worker requests.
 Source leads are `lanes::tree_cvs`' two vectors and first-use `job_source`.
 The unchanged small grouped scopes remain allocator-free as tested.
 
-The meter detects a4096B allocation planted in the real pool worker.
+The meter detects a 4096B allocation planted in the real pool worker.
 Disabling its cross-thread recording fails the independent positive control.
 Restoration passes all seven green scopes; the large-cycle test stays red.
 Observation covers Rust GlobalAlloc requests on the caller and named
