@@ -4386,6 +4386,12 @@ fn hash_batch(
                 .find(|(label, _)| *label == point.label)
                 .expect("the receiving case")
                 .1;
+            // PROBE (not for landing): BLAKE3-Servil mt receives through
+            // its stream, each arrival read straight into the ring by the
+            // fill, in place of update_multithreaded per fragment.
+            if algorithm == Algorithm::Blake3ServilMt {
+                return receive_through_stream(input, iterations, spacing, consume);
+            }
             return hash_stream_from::<true>(
                 algorithm,
                 input,
@@ -4787,6 +4793,56 @@ fn hash_collection(
  */
 fn hash_stream(algorithm: Algorithm, input: &[u8], iterations: usize, consume: impl FnMut(&[u8])) {
     hash_stream_from::<false>(algorithm, input, iterations, consume, |_, _| {});
+}
+
+/// PROBE: one message received through `throughput::stream`'s
+/// `submit_with`: a stream per message; the fill waits for the next
+/// arrival (the trace's deadlines, from the first arrival) and copies it
+/// into the stream's ring, the one copy of an arrival, at most one arrival
+/// a call (Read::read's contract).
+fn receive_through_stream(
+    input: &[u8],
+    iterations: usize,
+    spacing_ns: u64,
+    mut consume: impl FnMut(&[u8]),
+) {
+    for _ in 0..iterations {
+        let input = black_box(input);
+        let mut hash = blake3_servil::Hash::from_bytes([0; 32]);
+        {
+            let out = &mut hash;
+            let start = clocks::now();
+            let (mut at, mut left, mut cycle, mut next) = (0usize, 0usize, 0usize, 0u64);
+            blake3_servil::throughput::stream(
+                blake3_servil::Mode::Plain,
+                |_| {},
+                |s| {
+                    s.submit_with(
+                        input.len(),
+                        |_, buffer| {
+                            if left == 0 {
+                                if at != 0 && spacing_ns != 0 {
+                                    next += spacing_ns;
+                                    clocks::sleep_until(start, next);
+                                }
+                                left = receive::FRAGMENTS[cycle % receive::FRAGMENTS.len()]
+                                    .min(input.len() - at);
+                                cycle += 1;
+                            }
+                            let n = left.min(buffer.len());
+                            buffer[..n].copy_from_slice(&input[at..at + n]);
+                            at += n;
+                            left -= n;
+                            n
+                        },
+                        out,
+                    );
+                    s.finish();
+                },
+            );
+        }
+        consume(hash.as_bytes());
+    }
 }
 
 /// The same incremental calls, with either the uniform read trace or the
