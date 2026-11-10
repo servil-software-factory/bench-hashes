@@ -643,7 +643,7 @@ fn run_regress(exe: &Path, bench: &Path, arguments: &[String]) -> (i32, String) 
 fn fork_checkout(dir: &Path) -> PathBuf {
     let fork = std::fs::canonicalize(dir)
         .unwrap_or_else(|e| panic!("check: --fork {}: {e}", dir.display()));
-    let manifest = std::fs::read_to_string(fork.join("Cargo.toml")).unwrap_or_else(|e| {
+    let manifest = std::fs::read_to_string(servil_crate(&fork).join("Cargo.toml")).unwrap_or_else(|e| {
         panic!(
             "check: {} holds no Cargo.toml: {e}; --fork names BLAKE3-Servil's checkout",
             fork.display()
@@ -655,6 +655,19 @@ fn fork_checkout(dir: &Path) -> PathBuf {
         fork.display()
     );
     fork
+}
+
+/// The crate the bench depends on, in a checkout of BLAKE3-Servil: its
+/// `threads/` where the checkout holds two crates (BLAKE3 #335: the
+/// one-thread core at the root, the crate with the pool beside it, which
+/// re-exports the core), else the checkout itself.
+fn servil_crate(checkout: &Path) -> PathBuf {
+    let threads = checkout.join("threads");
+    if threads.join("Cargo.toml").exists() {
+        threads
+    } else {
+        checkout.to_owned()
+    }
 }
 
 fn git(cwd: &Path, args: &[&str]) -> String {
@@ -1206,7 +1219,7 @@ fn fork_patch(copy: &Path, checkout: &Path) -> String {
         .trim_matches('"');
     format!(
         "patch.\"{git}\".blake3-servil.path=\"{}\"",
-        checkout.display()
+        servil_crate(checkout).display()
     )
 }
 
