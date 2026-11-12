@@ -1,5 +1,7 @@
 # bench-hashes 0.22.0
 
+**Every cell's timed code is compiled by itself.** Each contender's loop for each use case is now a function of its own, so a change in one contender's code cannot shift how another's cell is laid out. Until now a use case's loops for every contender shared one large function, and on one machine that moved a cell 8 to 15% when unrelated code changed. The calls measured are the same.
+
 **A map of this release beside the last.** `bench-hashes beside` draws a machine's map with BLAKE3-Servil as of the release before beside this one's, dashed, with a chip to hide it. The two versions come from a release check's paired runs, since one bench cannot build both; `--without` leaves out rows, columns, or one kind of contender, for a page of one crate's calls.
 
 **BLAKE3-Servil mt's continuous cells make its one-shot calls.** BLAKE3-Servil 0.9 has no streaming API: its stream left with its first pipeline, and the Pipeline that replaces both is still to come. The multithreaded contender's continuous cells called the stream; they now read each input and hash it before reading the next, as every other contender's do. The cells keep their places, so a check against 0.8 shows what the stream gave. `bench-hashes leaves`, a study of the stream's ways to take Merkle leaves, goes with it.

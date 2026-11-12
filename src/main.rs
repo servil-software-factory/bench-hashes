@@ -4327,6 +4327,63 @@ fn hash_batch(
     iterations: usize,
     consume: impl FnMut(&[u8]),
 ) {
+    // Each cell's timed code is a function of its own (timed_cell): its
+    // contender's calls for its use case, compiled with nothing else in
+    // sight.
+    macro_rules! each_use_case {
+        ($a:literal: $($u:literal)*) => {
+            match UseCase::ALL.iter().position(|u| *u == point.use_case) {
+                $(Some($u) => timed_cell::<$a, $u>(input, point, iterations, consume),)*
+                _ => unreachable!("every use case is in UseCase::ALL"),
+            }
+        };
+    }
+    macro_rules! each_contender {
+        ($($a:literal)*) => {
+            match Algorithm::ALL.iter().position(|a| *a == algorithm) {
+                $(Some($a) => each_use_case!($a: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21),)*
+                _ => unreachable!("every contender is in Algorithm::ALL"),
+            }
+        };
+    }
+    each_contender!(0 1 2 3 4 5 6 7 8)
+}
+
+/// One cell's timed batches: contender `A` (its place in Algorithm::ALL)
+/// in use case `U` (its place in UseCase::ALL), in a function of its own,
+/// never inlined. The compiler lays out its loop with this contender's
+/// calls for this use case alone, so a change in another cell's code
+/// cannot move this one's. (BLAKE3 #368: on one machine the stream's cells
+/// moved 8 to 15% when a different call inlined differently into the
+/// function they shared with every other contender.)
+#[inline(never)]
+fn timed_cell<const A: usize, const U: usize>(
+    input: &[u8],
+    point: Point,
+    iterations: usize,
+    consume: impl FnMut(&[u8]),
+) {
+    let point = Point {
+        use_case: const { UseCase::ALL[U] },
+        ..point
+    };
+    hash_batch_of(
+        const { Algorithm::ALL[A] },
+        input,
+        point,
+        iterations,
+        consume,
+    )
+}
+
+#[inline(always)]
+fn hash_batch_of(
+    algorithm: Algorithm,
+    input: &[u8],
+    point: Point,
+    iterations: usize,
+    consume: impl FnMut(&[u8]),
+) {
     assert!(iterations > 0, "batch size must be positive");
     let messages = point.messages;
     let message_len = if point.use_case.batch() {
@@ -4413,6 +4470,7 @@ fn hash_batch(
 
 /// hash_batch for the use cases whose input is in memory: one message, or
 /// a batch of them.
+#[inline(always)]
 fn hash_in_memory(
     algorithm: Algorithm,
     input: &[u8],
@@ -4443,6 +4501,7 @@ fn hash_in_memory(
 /// `messages` messages of `message_len` bytes back to back in `input`,
 /// each contender's way: through its batch call where `batch` and it has
 /// one, else one call each; every digest into `consume`.
+#[inline(always)]
 fn hash_messages(
     algorithm: Algorithm,
     input: &[u8],
@@ -4638,6 +4697,7 @@ fn input_len(point: Point) -> usize {
  * workers while the next is read; every other hash, on the program's thread
  * after reading it, as it hashes one message in memory.
  */
+#[inline(always)]
 fn hash_continuous_collection(
     algorithm: Algorithm,
     input: &[u8],
@@ -4664,6 +4724,7 @@ fn hash_continuous_collection(
     keep_buffers(1, longest + BLOCK_SPARE, buffers);
 }
 
+#[inline(always)]
 fn hash_collection(
     algorithm: Algorithm,
     input: &[u8],
@@ -4723,12 +4784,14 @@ fn hash_collection(
  * contender gets each piece read into a PIECE_LEN buffer and then hashes
  * it through its incremental API, so reading and hashing take turns.
  */
+#[inline(always)]
 fn hash_stream(algorithm: Algorithm, input: &[u8], iterations: usize, consume: impl FnMut(&[u8])) {
     hash_stream_from::<false>(algorithm, input, iterations, consume, |_, _| {});
 }
 
 /// The same incremental calls, with either the uniform read trace or the
 /// receiving trace. The constant chooses the producer before the timed loop.
+#[inline(always)]
 fn hash_stream_from<const RECEIVING: bool>(
     algorithm: Algorithm,
     input: &[u8],
@@ -4860,6 +4923,7 @@ fn hash_stream_from<const RECEIVING: bool>(
  * message's incremental API; each message's hash, when it ends, goes to
  * `consume`.
  */
+#[inline(always)]
 fn hash_interleaved(
     algorithm: Algorithm,
     spec: &'static InterleavedSpec,
@@ -5229,6 +5293,7 @@ fn lent_twin(roster: &Roster, algorithm: Algorithm, point_index: usize) -> Optio
     roster.measures(twin).then_some(twin)
 }
 
+#[inline(always)]
 fn hash_continuous_messages(
     algorithm: Algorithm,
     blocks: &[u8],
@@ -5260,6 +5325,7 @@ fn hash_continuous_messages(
  * batch in memory (hash_batch); BLAKE3-Servil's queue of fixed-length messages
  * takes the program's buffers and hashes while the next are read.
  */
+#[inline(always)]
 fn hash_continuous_batches(
     algorithm: Algorithm,
     input: &[u8],
@@ -5276,6 +5342,7 @@ fn hash_continuous_batches(
 /// The producer lends a whole message or batch for one synchronous call.
 /// Each read is timed; the kept buffer and digest space avoid allocation
 /// after calibration, just as the queue's producer does.
+#[inline(always)]
 fn hash_lent(
     algorithm: Algorithm,
     input: &[u8],
@@ -5342,6 +5409,7 @@ impl Node {
 
 /// One layer of a tree: `input`'s messages of `message_len` bytes hashed as
 /// `node`s, each contender's way (Node), every digest into `consume`.
+#[inline(always)]
 fn hash_tree_layer(
     algorithm: Algorithm,
     input: &[u8],
@@ -5454,6 +5522,7 @@ fn hash_tree_layer(
     }
 }
 
+#[inline(always)]
 fn hash_merkle(
     algorithm: Algorithm,
     input: &[u8],
@@ -5516,6 +5585,7 @@ fn hash_merkle(
 /// buffer), each layer's digests into a `Packed<32>` which, two by two, is
 /// the next layer's batch of 64-byte parents (`as_blocks`): no copy into
 /// blocks, every layer kept.
+#[inline(always)]
 fn hash_merkle_packed(
     algorithm: Algorithm,
     input: &[u8],
