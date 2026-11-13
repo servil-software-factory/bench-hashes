@@ -36,6 +36,7 @@ fn main() {
     let lengths = [64usize, 1024, 4096, 16384, 65536, 1 << 20, 16 << 20];
     let offsets = [0usize, 16, 1];
     let turns = 6;
+    blake3_servil::initialize();
     println!("# align-probe v1");
     println!("engine\tbytes\toffset\tns_per_call\tratio_to_offset_0\tmin\tmax");
     for (name, engine) in engines {
