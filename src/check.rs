@@ -38,16 +38,12 @@
 //!    each run FIRST_RUNS times): servil st and servil mt
 //!    (the code that changes) at the regression check's visits
 //!    (TO_CHECK_FOR_REGRESSIONS), judged all at once (clocks::summary).
-//! 4. Runs the cells `regress` names as suspects (the cells it judged
-//!    slower, then the level ones whose pairs' mean lies beyond the margin;
-//!    at most 8) again on SECOND_PAIRS fresh pairs (SECOND_LAYOUTS new links
-//!    a side, each run SECOND_RUNS times), judged among themselves, and
-//!    takes that stage's verdict: judged among every cell, a slowdown at
-//!    one point is level unless it is many times its pairs' spread
-//!    (bench-hashes #66), and four pairs that agree are also what a
-//!    difference between two benches' schedules looks like (November 13,
-//!    2026). More than 8 cells judged slower stand as the first stage read
-//!    them.
+//! 4. When no cell is slower, runs the cells `regress` names as suspects
+//!    (level, the pairs' mean beyond the margin; at most 8) again on
+//!    SECOND_PAIRS fresh pairs (SECOND_LAYOUTS new links a side, each run
+//!    SECOND_RUNS times), judged among
+//!    themselves: judged among every cell, a slowdown at one point is
+//!    level unless it is many times its pairs' spread (bench-hashes #66).
 //!
 //! A change to BLAKE3-Servil's API changes the bench with it, so one bench builds
 //! against one side alone: `--old-bench REV` builds the old side with this
@@ -569,22 +565,11 @@ pub fn command(arguments: &[String]) -> i32 {
         .find_map(|l| l.strip_prefix("regress: suspects: "))
         .map(|s| s.split(';').map(str::to_string).collect())
         .unwrap_or_default();
-    // No verdict (a busy machine, a side that stopped), or nothing for a
-    // second stage: the first stage's exit stands. A first stage that judged
-    // cells slower names them first among its suspects, unless they are more
-    // than a second stage holds (regress, second_stage_cells).
-    if code >= 2 || suspects.is_empty() {
+    if code != 0 || suspects.is_empty() {
         return code;
     }
     // The second stage: the suspects on fresh layouts (seeds past both
-    // sides' first ones), judged among themselves. Its verdict is the
-    // check's: four pairs that agree are what a schedule's or a clock's
-    // difference between the sides looks like too.
-    if code == 1 {
-        println!(
-            "check: the first stage's slower cells are judged again, with its suspects, on {SECOND_PAIRS} fresh pairs; the verdict is that stage's"
-        );
-    }
+    // sides' first ones), judged among themselves.
     eprintln!(
         "check: a second stage for {} suspects on {SECOND_PAIRS} fresh pairs: {}",
         suspects.len(),

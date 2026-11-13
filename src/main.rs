@@ -7417,33 +7417,6 @@ fn suspects_in_turn<'a>(moved: &[&'a str], slower: &[&'a str]) -> Vec<&'a str> {
     suspects
 }
 
-/// The cells a second stage judges again on fresh pairs: the cells the
-/// first stage judged slower (`judged_slower`, the strongest evidence
-/// first), then its suspects (`suspects`), at most REGRESS_SUSPECTS in all.
-/// None when the first stage judged more cells slower than a second stage
-/// holds: a slowdown that broad stands as the first stage read it.
-///
-/// A first stage's verdict rests on four pairs, which pass the rule only
-/// when they agree within a fraction of the change, and what agrees so
-/// in every pair has twice been the measurement's own: a difference
-/// between two benches' schedules that every pair repeats (a turn of 256
-/// on two EPYC 7443, +13.1% and +14.9% in two checks a day apart, 8 pairs
-/// of 8, and -1.5% by name), a core's clock after a pause (an i7-12700K:
-/// +10.8% of wall, +0.7% of cycles). Each such verdict also ended its
-/// check before the second stage, whose 64 pairs are the ones that can
-/// tell a cold cell's 5% (November 13, 2026: three of six machines'
-/// release checks). So the second stage now judges those cells too, and
-/// its verdict is the check's.
-fn second_stage_cells<'a>(judged_slower: &[&'a str], suspects: &[&'a str]) -> Option<Vec<&'a str>> {
-    if judged_slower.len() > REGRESS_SUSPECTS {
-        return None;
-    }
-    let mut cells = judged_slower.to_vec();
-    cells.extend(suspects.iter().filter(|s| !judged_slower.contains(s)));
-    cells.truncate(REGRESS_SUSPECTS);
-    Some(cells)
-}
-
 /// The margin beyond which a level cell's instructions, moved, name it a
 /// suspect beside the wall-ranked ones (Zooko, November 4, 2026, on
 /// John's rule; bench-hashes #127): instructions retired are the same
@@ -8048,8 +8021,6 @@ fn regress_command(arguments: &[String]) -> i32 {
     // the moved, and those slower beyond the wall margin, by their rank.
     let mut moved_suspects: Vec<(usize, &String)> = Vec::new();
     let mut slower_suspects: Vec<(usize, &String)> = Vec::new();
-    // The cells judged slower, for a second stage to judge again.
-    let mut judged_slower: Vec<(usize, &String)> = Vec::new();
     let moved = instructions_moved(&instruction_ratios, pairs);
     for (i, (key, judgment)) in judged.into_iter().zip(judgments).enumerate() {
         // A row whose measurement an earlier row holds (an owned cell
@@ -8067,9 +8038,6 @@ fn regress_command(arguments: &[String]) -> i32 {
         }
         let word = if judgment.verdict == clocks::summary::Verdict::Slower {
             slower += usize::from(first);
-            if first {
-                judged_slower.push((judgment.rank, key));
-            }
             "SLOWER"
         } else {
             "faster"
@@ -8083,46 +8051,38 @@ fn regress_command(arguments: &[String]) -> i32 {
         println!("regress: REGRESSION: {slower} cells slower");
     } else {
         println!("regress: no cell slower");
-    }
-    // The level cells slower beyond the margin, the strongest evidence
-    // first: what a second stage confirms on fresh pairs (check). At 8
-    // pairs, ranked by ratio, #119's slowed cells were among the 8 in
-    // 42 resamplings of 55, ranked by evidence in 52 (the data branch,
-    // 2026-10-31/check-errors-i7). The cells judged slower come before
-    // them (second_stage_cells).
-    moved_suspects.sort();
-    slower_suspects.sort();
-    judged_slower.sort();
-    let moved_in_order: Vec<&str> = moved_suspects.iter().map(|(_, k)| k.as_str()).collect();
-    let slower_in_order: Vec<&str> = slower_suspects.iter().map(|(_, k)| k.as_str()).collect();
-    let judged_in_order: Vec<&str> = judged_slower.iter().map(|(_, k)| k.as_str()).collect();
-    let suspects = second_stage_cells(
-        &judged_in_order,
-        &suspects_in_turn(&moved_in_order, &slower_in_order),
-    );
-    if instruction_ratios.is_empty() {
-        println!("regress: this machine counts no instructions; the suspects are wall's alone");
-    } else if moved.is_empty() {
-        println!(
-            "regress: no level cell's instructions moved beyond {}",
-            percent(1000 + INSTRUCTIONS_MARGIN_PERMILLE)
-        );
-    } else {
-        let listed: Vec<String> = moved
-            .iter()
-            .map(|(k, r)| format!("{k} {}", percent(*r)))
-            .collect();
-        println!(
-            "regress: instructions moved beyond {} in {} level cells, suspects first: {}",
-            percent(1000 + INSTRUCTIONS_MARGIN_PERMILLE),
-            moved.len(),
-            listed.join("; ")
-        );
-    }
-    match suspects {
-        Some(suspects) if !suspects.is_empty() => println!("regress: suspects: {}", suspects.join(";")),
-        Some(_) => {}
-        None => println!("regress: more cells slower than a second stage judges ({REGRESS_SUSPECTS}): the verdict stands"),
+        // The level cells slower beyond the margin, the strongest evidence
+        // first: what a second stage confirms on fresh pairs (check). At 8
+        // pairs, ranked by ratio, #119's slowed cells were among the 8 in
+        // 42 resamplings of 55, ranked by evidence in 52 (the data branch,
+        // 2026-10-31/check-errors-i7).
+        moved_suspects.sort();
+        slower_suspects.sort();
+        let moved_in_order: Vec<&str> = moved_suspects.iter().map(|(_, k)| k.as_str()).collect();
+        let slower_in_order: Vec<&str> = slower_suspects.iter().map(|(_, k)| k.as_str()).collect();
+        let suspects = suspects_in_turn(&moved_in_order, &slower_in_order);
+        if instruction_ratios.is_empty() {
+            println!("regress: this machine counts no instructions; the suspects are wall's alone");
+        } else if moved.is_empty() {
+            println!(
+                "regress: no level cell's instructions moved beyond {}",
+                percent(1000 + INSTRUCTIONS_MARGIN_PERMILLE)
+            );
+        } else {
+            let listed: Vec<String> = moved
+                .iter()
+                .map(|(k, r)| format!("{k} {}", percent(*r)))
+                .collect();
+            println!(
+                "regress: instructions moved beyond {} in {} level cells, suspects first: {}",
+                percent(1000 + INSTRUCTIONS_MARGIN_PERMILLE),
+                moved.len(),
+                listed.join("; ")
+            );
+        }
+        if !suspects.is_empty() {
+            println!("regress: suspects: {}", suspects.join(";"));
+        }
     }
     println!("{power}");
     i32::from(slower > 0)
@@ -9577,46 +9537,6 @@ mod correctness_tests {
             power_line(&sizes_context(&roster, &machine, None)),
             power_line(&at_80),
             "the source sizes"
-        );
-    }
-
-    /// A second stage judges the first stage's slower cells again, ahead
-    /// of its suspects, within the stage's eight places; more than eight
-    /// stand as read.
-    #[test]
-    fn the_second_stage_judges_the_first_stages_slower_cells_again() {
-        let suspects = [
-            "st|solo|suspect a",
-            "st|solo|suspect b",
-            "st|solo|suspect c",
-        ];
-        // None judged slower: the suspects, as before.
-        assert_eq!(second_stage_cells(&[], &suspects), Some(suspects.to_vec()));
-        // A cell judged slower comes first, the suspects after it.
-        assert_eq!(
-            second_stage_cells(&["st|solo|turn"], &suspects),
-            Some(vec!["st|solo|turn", suspects[0], suspects[1], suspects[2]])
-        );
-        // At most REGRESS_SUSPECTS in all, the judged cells keeping their places.
-        let judged: Vec<String> = (0..REGRESS_SUSPECTS)
-            .map(|i| format!("st|solo|slower {i}"))
-            .collect();
-        let judged: Vec<&str> = judged.iter().map(String::as_str).collect();
-        assert_eq!(second_stage_cells(&judged, &suspects), Some(judged.clone()));
-        assert_eq!(
-            second_stage_cells(&judged[..6], &suspects).unwrap()[6..],
-            suspects[..2]
-        );
-        // More judged slower than the stage holds: the first stage's verdict stands.
-        let many: Vec<String> = (0..=REGRESS_SUSPECTS)
-            .map(|i| format!("st|solo|slower {i}"))
-            .collect();
-        let many: Vec<&str> = many.iter().map(String::as_str).collect();
-        assert_eq!(second_stage_cells(&many, &suspects), None);
-        // A cell named twice is judged once.
-        assert_eq!(
-            second_stage_cells(&[suspects[1]], &suspects),
-            Some(vec![suspects[1], suspects[0], suspects[2]])
         );
     }
 
