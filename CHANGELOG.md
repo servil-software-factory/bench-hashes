@@ -1,3 +1,7 @@
+# bench-hashes 0.23.0
+
+**A first-stage "slower" is judged again.** `check` read a cell slower on four pairs and stopped there, before its second stage. Four pairs pass only when they agree closely, and on November 12 and 13 every such verdict (six, across two benches) turned out to be the measurement's own: a difference between the two benches' schedules, or a core's clock after a pause, the same in every pair. Now those cells lead the second stage's suspects, 64 fresh pairs judge them, and that stage's verdict is the check's. More than eight cells slower in the first stage stand as read.
+
 # bench-hashes 0.22.0+d7723f110a6f519cccb2e4ab8f2a18be7a4f4d41
 
 **Every cell's timed code is compiled by itself.** Each contender's loop for each use case is now a function of its own, so a change in one contender's code cannot shift how another's cell is laid out. Until now a use case's loops for every contender shared one large function, and on one machine that moved a cell 8 to 15% when unrelated code changed. The calls measured are the same.

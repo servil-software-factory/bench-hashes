@@ -30,6 +30,16 @@ read as alike. The
 documents that explain the benchmark (README, METHODOLOGY, CONTRIBUTING,
 the notes) may still change, to say it better.
 
+**Changes for the next release** (Devon Jonte's decisions, each dated):
+- **A check's second stage judges its first stage's slower cells again**
+  (Devon Jonte, November 13, 2026). A first stage that read a cell slower
+  ended the check on four pairs. Six such verdicts in two days, all across
+  two benches, were the measurement's own (METHODOLOGY, "Each part of the
+  rule"), and each kept the second stage from the cells it would have
+  judged. The cells judged slower now come first among the second stage's
+  eight, and its verdict is the check's; more than eight stand as read.
+  What the benchmark asks of the library is unchanged.
+
 **Changes for 0.22, November 12-13, 2026** (Devon Jonte's decisions, each dated):
 - **The pin is BLAKE3-Servil 0.9.0** (Devon Jonte, November 13, 2026):
   commit bf2da8b957f5e0c80babb57952de3e53f95c921a, the release
