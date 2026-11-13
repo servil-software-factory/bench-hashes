@@ -482,8 +482,9 @@ at least three pairs) and judges all their cells at once. Each cell uses
 a paired t-test on the logarithm of each pair's ratio (new mean over
 old), with the Benjamini-Hochberg procedure controlling the false
 discovery rate at 5% across all cells; a cell that passes is marked
-slower or faster beyond a 3% margin, and the rest are level. Beside each
-cell it prints each side's geometric mean of run means, the ratio of the
+slower or faster beyond a 3% margin, and the rest are level. **Level means
+insufficient evidence under this rule**, rather than established equal
+speed. Beside each cell it prints each side's geometric mean of run means, the ratio of the
 two, and how many pairs ran faster. Any run whose load was busy or
 unmeasured is noted beside the result.
 Where both sides' samples carry CPU time, it adds each cell's CPU-time
@@ -607,6 +608,16 @@ change reaches, a slowdown at one point passes unseen unless it is many
 times its pairs' spread; among 8 cells on 64 pairs it shows once it
 reaches about a third of one pair's spread. The stage adds about eight
 minutes, most of it the relinks.
+
+**A comparison's workload context matters.** Selecting cells changes what
+runs around them. A full run and a selected-cell follow-up can therefore
+measure different cache, clock and memory states, even with the same
+library code. Keep their readings together; resolving a full-run slowdown
+requires evidence about that context too. Across benchmark versions,
+unchanged reference contenders help reveal harness effects, but their
+results cannot subtract effects specific to another contender. The
+[November 13 audit](https://github.com/devonjonte/bench-hashes/tree/data/2026-11-13/methodology-audit)
+records both effects and the remaining questions.
 
 ### Each part of the rule, and its evidence
 

@@ -100,11 +100,15 @@ These questions have found causes quickly, each a check of a few minutes
 on the machine that read the cell:
 
 1. **Does it repeat by name?** Run the check again with the cell and its
-   neighbours as `--points` (and `--contenders` for one form): a named
-   cell gets the second stage's 64 pairs. Its line says how far the
-   pairs spread ("from -27.0% to +194.6%"). Then run the same check once
-   more: a verdict that changes between two runs of one comparison is
-   the measurement's.
+   neighbours as `--points` (and `--contenders` for one form). `check`
+   takes its 64-pair second stage only when the first finds no slower
+   cell and names suspects. The report says how many pairs ran and how
+   far they spread ("from -27.0% to +194.6%"). Keep the full-run reading
+   beside it: selecting cells changes the surrounding workload and can
+   change their costs. A level rerun means the rule found insufficient
+   evidence of a slowdown in that run's context; it does not establish
+   equal speed or erase the earlier reading. Compare the ratios and
+   spread, and repeat the original context when resolving that reading.
 2. **Whose is it, the library's or the bench's?** A check against a past
    release crosses two benches (`--old-bench`). Change one thing at a
    time: the two library commits under one bench; then one library under
@@ -112,9 +116,10 @@ on the machine that read the cell:
 3. **Is it the logic, or how this one build compiled?** Run the same
    check with both sides compiled another way:
    `CARGO_PROFILE_RELEASE_LTO=thin CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
-   bench-hashes check ...`. Slower both ways is the change's own doing.
-   Slower one way alone is the compiler's: the change moved how code it
-   left alone was inlined or laid out.
+   bench-hashes check ...`. A cost that appears under both builds has
+   broader evidence. A cost that depends on the build calls for examining
+   inlining, layout and code generation. Both are costs a compiled
+   program can meet; these readings alone do not identify the cause.
 4. **Which code changed?** `check`'s first lines name the functions whose
    compiled size differs between the sides, the changed lines' own and
    the others. The others, on the cell's path, are the suspects of a
@@ -131,10 +136,10 @@ Cases of November 12, each on the data branch under `2026-11-12/`:
   BLAKE3 #349) read 11 to 30% slower compiled the second way too.
 
 A compiler's effect is still an effect: a program compiled once meets it.
-Its fix is in the source, where it can be seen and held: the function
-that must stay inlined (`#[inline(always)]`) or stay a call
-(`#[inline(never)]`), in the library or in this bench. Its test is the
-check of step 1, level under both compilations of step 3.
+Inspect the generated code before choosing a source change, such as an
+inlining annotation. Evaluate that change under the workload context that
+exposed the cost, across link layouts and the relevant build settings.
+Keep any remaining cost visible in the decision.
 
 Nothing else runs on a machine while it measures: queue the check under
 the machine's lock and read its files when it has ended.
@@ -258,8 +263,11 @@ machine runs again. In order:
    such as `tuned` can reset it mid-run). A machine's run is:
    - BLAKE3-Servil's release check and, beside it, the same check with the same
      library on both sides (`--against` the measured commit, `--old-bench`
-     the previous bench). A cell slower in the first and level in the
-     second is the library's; slower in both, the bench's.
+     the previous bench). This control tests benchmark-version effects
+     with that library. Read its ratios and uncertainty alongside the
+     release comparison: a level control leaves small effects unresolved,
+     and both library and benchmark changes may contribute. Record both
+     comparisons' benchmark commits and workload scopes, which can differ.
      Where the library's API has changed since its last release, the
      release check takes `--old-bench` too, a bench that builds against
      that release; the issue for the release names both commands;
