@@ -133,7 +133,10 @@ fn each_run(exes: Vec<String>, times: usize) -> Vec<String> {
         .collect()
 }
 /// The two sides' contenders: the code a change to BLAKE3-Servil changes.
-const SUBJECTS: [&str; 2] = ["blake3-servil-st", "blake3-servil-mt"];
+// PROBE (methodology audit, November 13, 2026; never merged): two contenders whose code is the same on both
+// sides of a check across two benches join the subjects, so their cells show what the benches themselves
+// differ by. The measured cells' code is the tag's.
+const SUBJECTS: [&str; 4] = ["blake3-servil-st", "blake3-servil-mt", "blake3-official", "sha256-ring"];
 
 /// The contenders a comparison across two benches runs: those the older
 /// bench knows too, from its `--list` (each line starts with a key). A
