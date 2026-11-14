@@ -10,7 +10,7 @@
 //! What a check does, every time, with nothing to choose:
 //! 0. Builds bench-hashes against both sides in turn from one path and
 //!    compares the two builds (src/samecode.rs): where they hold the same
-//!    allocated code/data, ELF notes and declared provenance aside, the
+//!    allocated code/data, build IDs and declared provenance aside, the
 //!    verdict is "same code", exit 0, and nothing is measured (bench-hashes
 //!    #125). Otherwise it names the functions that differ and goes on.
 //! 1. Builds bench-hashes twice, against BLAKE3-Servil at each side (a commit
@@ -420,7 +420,7 @@ pub fn command(arguments: &[String]) -> i32 {
                     s
                 };
                 eprintln!(
-                    "check: the change alters the bench's code here: {}; {} functions of another size or on one side alone ({}); {} of other bytes ({})",
+                    "check: the builds differ here: {}; {} functions of another size or on one side alone ({}); {} of other bytes ({})",
                     sections.join(", "),
                     resized.len(),
                     list(&resized),

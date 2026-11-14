@@ -1,10 +1,12 @@
 # Unreleased
 
 **The same-code shortcut retains ordinary data changes.** It previously erased
-words beside a `.rs` filename as presumed panic locations. Ordinary file-limit
-data can have that shape too, letting different programs compare as unchanged.
-The shortcut now keeps those words. Edits that only move panic source locations
-may therefore proceed to measurement. The sampled comparison rule is unchanged.
+words beside a `.rs` filename as presumed panic locations and excluded every
+ELF note. Ordinary configuration can have that shape or live in a note, letting
+different programs compare as unchanged. The shortcut now retains those values,
+allowing only declared provenance and build IDs to differ. Edits that only move
+panic source locations or change other notes may now proceed to measurement.
+The sampled comparison rule is unchanged.
 
 **Kept comparisons protect earlier records.** `check` and `regress` require
 `--keep` to name a new or empty directory. They stop before expensive work when

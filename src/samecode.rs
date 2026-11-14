@@ -1,6 +1,6 @@
 //! Whether two builds hold the same allocated code and data (bench-hashes #125).
 //! `check` builds both library commits at one path and compares every allocated
-//! section except ELF notes (including the build ID), masking the declared
+//! section except the build-ID note, masking the declared
 //! provenance strings that intentionally name different commits.
 //!
 //! Every other data byte participates, including panic source locations. A
@@ -73,7 +73,11 @@ fn read(path: &Path) -> Option<Image> {
     let mut sections = BTreeMap::new();
     for i in 0..count {
         let (name, kind, flags, addr, offset, size) = header(i);
-        if flags & SHF_ALLOC == 0 || kind == SHT_NOTE {
+        if flags & SHF_ALLOC == 0 {
+            continue;
+        }
+        let name = name_of(name);
+        if kind == SHT_NOTE && name == ".note.gnu.build-id" {
             continue;
         }
         let body = if kind == SHT_NOBITS {
@@ -81,7 +85,7 @@ fn read(path: &Path) -> Option<Image> {
         } else {
             d[offset..offset + size as usize].to_vec()
         };
-        sections.insert(name_of(name), (addr, size, body));
+        sections.insert(name, (addr, size, body));
     }
     Some(Image { sections })
 }
@@ -170,8 +174,8 @@ fn functions(
 }
 
 /// Whether `a` and `b` hold the same allocated code/data, with `masks` (the
-/// declared provenance strings) zeroed in both. ELF notes are excluded;
-/// None where either file has another format.
+/// declared provenance strings) zeroed in both. The build-ID note is excluded;
+/// other allocated notes participate. None where either file has another format.
 pub fn compare(a: &Path, b: &Path, masks: &[&str]) -> Option<Verdict> {
     let (mut ia, mut ib) = (read(a)?, read(b)?);
     for image in [&mut ia, &mut ib] {
@@ -284,6 +288,75 @@ mod tests {
             })
             .map(|o| u64_at(exe, o + 24) as usize + (addr - u64_at(exe, o + 16)) as usize)
             .expect("the section")
+    }
+
+    /// A fixed ELF64 relocatable object with two valid allocated notes.
+    /// readelf/nm independently check this layout in the issue's evidence.
+    fn note_object(build_id: u8, value: u32) -> Vec<u8> {
+        let mut data = vec![0; 416];
+        data[..8].copy_from_slice(b"\x7fELF\x02\x01\x01\0");
+        let machine = if cfg!(target_arch = "aarch64") {
+            183u16
+        } else {
+            62u16
+        };
+        for (at, word) in [
+            (16, 1u16),
+            (18, machine),
+            (52, 64),
+            (58, 64),
+            (60, 4),
+            (62, 1),
+        ] {
+            data[at..at + 2].copy_from_slice(&word.to_le_bytes());
+        }
+        data[20..24].copy_from_slice(&1u32.to_le_bytes());
+        data[40..48].copy_from_slice(&160u64.to_le_bytes());
+        data[64..104].copy_from_slice(b"\0.shstrtab\0.note.gnu.build-id\0.note.app\0");
+        for (at, words) in [(104, [4u32, 16, 3]), (136, [4u32, 4, 1])] {
+            for (i, word) in words.into_iter().enumerate() {
+                data[at + i * 4..at + (i + 1) * 4].copy_from_slice(&word.to_le_bytes());
+            }
+        }
+        data[116..120].copy_from_slice(b"GNU\0");
+        data[120..136].fill(build_id);
+        data[148..152].copy_from_slice(b"APP\0");
+        data[152..156].copy_from_slice(&value.to_le_bytes());
+        for (i, (name, kind, flags, offset, size, align)) in [
+            (1u32, 3u32, 0u64, 64u64, 40u64, 1u64),
+            (11, 7, 2, 104, 32, 4),
+            (30, 7, 2, 136, 20, 4),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let at = 160 + (i + 1) * 64;
+            data[at..at + 4].copy_from_slice(&name.to_le_bytes());
+            data[at + 4..at + 8].copy_from_slice(&kind.to_le_bytes());
+            for (field, word) in [(8, flags), (24, offset), (32, size), (48, align)] {
+                data[at + field..at + field + 8].copy_from_slice(&word.to_le_bytes());
+            }
+        }
+        data
+    }
+
+    #[test]
+    fn only_the_build_id_note_is_ignored() {
+        let dir = std::env::temp_dir().join(format!("samecode-{}-notes", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (base, id, app) = (dir.join("base.o"), dir.join("id.o"), dir.join("app.o"));
+        std::fs::write(&base, note_object(1, 111)).unwrap();
+        std::fs::write(&id, note_object(2, 111)).unwrap();
+        std::fs::write(&app, note_object(1, 222)).unwrap();
+        assert_eq!(compare(&base, &id, &[]), Some(Verdict::Same));
+        assert!(
+            matches!(compare(&base, &app, &[]),
+                Some(Verdict::Differs { sections, resized, changed })
+                    if sections == [".note.app"] && resized.is_empty() && changed.is_empty()
+            ),
+            "ordinary allocated notes can affect program behavior"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

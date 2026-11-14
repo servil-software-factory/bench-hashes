@@ -593,8 +593,8 @@ measured and how many it left unmeasured; choosing them is the author's
 judgment, from the summary and the change itself.
 
 On Linux, the check may also stop after comparing the builds' code and data,
-allowing their declared provenance and ELF metadata notes to differ. Panic
-source locations participate in that comparison. Even a line-number-only edit
+allowing their declared provenance and build IDs to differ. Other allocated
+notes and panic source locations participate in that comparison. Even a line-number-only edit
 may therefore proceed to measurement.
 
 Underneath, `bench-hashes regress` runs the pairs back to back in
