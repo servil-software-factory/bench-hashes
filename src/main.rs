@@ -5890,9 +5890,8 @@ thread_local! {
 /*
  * What the benchmark asks of BLAKE3-Servil, by contender and use case:
  * BLAKE3-Servil's call and its usage pattern. FROZEN.md lists the same, with the
- * reasons; a test compares them, so a change here needs FROZEN.md changed,
- * with Zooko's decision. Keep the dispatch (hash_batch) calling exactly
- * these.
+ * reasons; a test compares them. A change follows FROZEN.md's decision rules
+ * and is recorded there. Keep the dispatch (hash_batch) calling exactly these.
  */
 #[cfg(test)]
 const SERVIL_CALLS: [(Algorithm, UseCase, &str); 36] = [
@@ -9448,7 +9447,7 @@ mod correctness_tests {
         assert_eq!(
             &manifest[start..end],
             frozen_contract(),
-            "the benchmark's contract with BLAKE3-Servil changed: change FROZEN.md with it, with Zooko's decision and its reason"
+            "the benchmark's contract with BLAKE3-Servil changed: update FROZEN.md under its decision rules and record the reason"
         );
     }
 
