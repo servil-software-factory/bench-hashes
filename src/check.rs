@@ -10,7 +10,7 @@
 //! What a check does, every time, with nothing to choose:
 //! 0. Builds bench-hashes against both sides in turn from one path and
 //!    compares the two builds (src/samecode.rs): where they hold the same
-//!    code, the commits and the panic locations' line numbers aside, the
+//!    allocated code/data, build IDs and declared provenance aside, the
 //!    verdict is "same code", exit 0, and nothing is measured (bench-hashes
 //!    #125). Otherwise it names the functions that differ and goes on.
 //! 1. Builds bench-hashes twice, against BLAKE3-Servil at each side (a commit
@@ -404,7 +404,7 @@ pub fn command(arguments: &[String]) -> i32 {
     if old_bench_rev.is_none() {
         match same_path_verdict(&fork, &bench, &cache, &old, &new) {
             Some(crate::samecode::Verdict::Same) => {
-                println!("check: same code: the change alters nothing the bench runs here");
+                println!("check: same code: allocated code and data match (provenance aside)");
                 return 0;
             }
             Some(crate::samecode::Verdict::Differs {
@@ -420,7 +420,7 @@ pub fn command(arguments: &[String]) -> i32 {
                     s
                 };
                 eprintln!(
-                    "check: the change alters the bench's code here: {}; {} functions of another size or on one side alone ({}); {} of other bytes ({})",
+                    "check: the builds differ here: {}; {} functions of another size or on one side alone ({}); {} of other bytes ({})",
                     sections.join(", "),
                     resized.len(),
                     list(&resized),
@@ -864,9 +864,10 @@ fn side(fork: &Path, bench: &Path, cache: &Path, name: &str, commit: &str) -> Pa
 }
 
 /// Both sides built in turn from one worktree, `target/check/same/src`, into
-/// one target directory, and compared (crate::samecode, with the commits
-/// and the panic locations' lines masked): at two paths every build
-/// differs, at one only what the change alters (bench-hashes #125). None
+/// one target directory, and compared (crate::samecode, with declared
+/// provenance masked). Source locations remain data: recognizing their shape
+/// can also hide ordinary limits (bench-hashes #219). One path keeps build-path
+/// differences out of the comparison (bench-hashes #125). None
 /// where the executable is not ELF.
 fn same_path_verdict(
     fork: &Path,
@@ -883,7 +884,7 @@ fn same_path_verdict(
         exes.push(kept);
     }
     let masks = [old, new, &old[..12], &new[..12]];
-    crate::samecode::compare(&exes[0], &exes[1], &masks, true)
+    crate::samecode::compare(&exes[0], &exes[1], &masks)
 }
 
 /// The bench `check` and `build-against` copy and build: the current

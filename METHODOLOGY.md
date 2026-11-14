@@ -592,6 +592,11 @@ cells once per first-stage layout. The check records how many points it
 measured and how many it left unmeasured; choosing them is the author's
 judgment, from the summary and the change itself.
 
+On Linux, the check may also stop after comparing the builds' code and data,
+allowing their declared provenance and build IDs to differ. Other allocated
+notes and panic source locations participate in that comparison. Even a line-number-only edit
+may therefore proceed to measurement.
+
 Underneath, `bench-hashes regress` runs the pairs back to back in
 alternating order (four pairs by default in `check`, a link a side
 each; eight in `regress`),
