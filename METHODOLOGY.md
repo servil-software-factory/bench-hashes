@@ -121,6 +121,29 @@ BLAKE3-Servil mt, `Digest::update` in sha2, sha1-checked, and sha3,
 ring's `Context::update`, CommonCrypto's `CC_SHA256_Update`). The time
 is per byte of pieces.
 
+## Short messages through an incremental API
+
+These cells measure an incremental hasher's complete lifetime at 64 B,
+1 KiB and 4 KiB: create it, update once with the complete message, finalize
+and consume the digest. Every operation starts a fresh hasher. A program
+using a digest interface can pay this lifecycle cost even when its entire
+message is already available. Long-message cells amortize that cost.
+
+The map's "one short message, fresh hasher" row shows two patterns: after
+other work, and nonstop synchronous calls. The first uses the one-shot
+cell's prepared-input copy and selects its call before the gap. The second
+uses the lent-message cell's kept buffer and copies the input once before
+each lifetime. Both include input production in the reported time, as their
+one-shot baselines do. The API accepts the message's actual length, with no
+additional producer copy inside the hasher adapter.
+
+Every contender uses its existing incremental API, including `update_rayon`
+for official BLAKE3 mt and `update_multithreaded` for Servil mt. Servil's
+constructor receives no expected message length. The short cells and the
+long-stream producer share those calls. `--points` names them
+as `incremental 64 B` and `lent incremental 64 B`, and likewise for 1 KiB
+and 4 KiB. Multiple updates per short message are a separate question.
+
 ## Receiving one message
 
 This case times a 16 MiB message from its first arriving fragment to its

@@ -1,3 +1,4 @@
+mod incremental;
 mod pipeline;
 mod receive;
 
@@ -189,7 +190,8 @@ const POINT_COUNT: usize = 4 * (INPUT_COUNT + BATCH_COUNT)
     + LONG_BATCH_COUNT
     + MERKLE_COUNT
     + 4 * TURN_COUNT
-    + 3;
+    + 3
+    + 6; // Three short incremental sizes, after other work and nonstop.
 /// A long message reaches a contender in pieces of this many bytes (a
 /// typical read buffer), the last one shorter.
 const PIECE_LEN: usize = 64 * 1024;
@@ -773,6 +775,30 @@ const POINTS: [Point; POINT_COUNT] = [
     Point::receiving(0),
     Point::receiving(1),
     Point::receiving(2),
+    Point {
+        use_case: UseCase::IncrementalMessage,
+        ..Point::one("64 B", 64)
+    },
+    Point {
+        use_case: UseCase::IncrementalMessage,
+        ..Point::one("1 KiB", 1024)
+    },
+    Point {
+        use_case: UseCase::IncrementalMessage,
+        ..Point::one("4 KiB", 4096)
+    },
+    Point {
+        use_case: UseCase::LentIncrementalMessage,
+        ..Point::one("64 B", 64)
+    },
+    Point {
+        use_case: UseCase::LentIncrementalMessage,
+        ..Point::one("1 KiB", 1024)
+    },
+    Point {
+        use_case: UseCase::LentIncrementalMessage,
+        ..Point::one("4 KiB", 4096)
+    },
 ];
 
 /// results[contender_index][point_index], contenders in the roster's
@@ -881,6 +907,10 @@ enum UseCase {
     /// One message in irregular fragments, with an independent arrival
     /// schedule. The complete receive and hash are timed together.
     ReceivingMessage,
+    /// A fresh incremental hasher, one update and finalization, after other work.
+    IncrementalMessage,
+    /// The same lifetime under sustained synchronous calls, input copied once.
+    LentIncrementalMessage,
 }
 
 /// The two pauses before a call "after idling" (Zooko, November 4, 2026;
@@ -908,7 +938,7 @@ const PATTERNS: [&str; 6] = [
 ];
 
 impl UseCase {
-    const ALL: [UseCase; 22] = [
+    const ALL: [UseCase; 24] = [
         UseCase::OneMessage,
         UseCase::ManyMessages,
         UseCase::ManyLongMessages,
@@ -931,6 +961,8 @@ impl UseCase {
         UseCase::BriefIdleInterleavedTurn,
         UseCase::ControlledIdleInterleavedTurn,
         UseCase::ReceivingMessage,
+        UseCase::IncrementalMessage,
+        UseCase::LentIncrementalMessage,
     ];
 
     /// Whether each call comes after a gap (the synchronous use cases:
@@ -939,7 +971,11 @@ impl UseCase {
     fn after_gap(self) -> bool {
         matches!(
             self.call(),
-            Self::OneMessage | Self::ManyMessages | Self::ManyLongMessages | Self::InterleavedTurn
+            Self::OneMessage
+                | Self::ManyMessages
+                | Self::ManyLongMessages
+                | Self::InterleavedTurn
+                | Self::IncrementalMessage
         )
     }
 
@@ -1029,6 +1065,8 @@ impl UseCase {
             || matches!(
                 self.call(),
                 Self::OneMessage
+                    | Self::IncrementalMessage
+                    | Self::LentIncrementalMessage
                     | Self::LentMessages
                     | Self::ContinuousMessages
                     | Self::Collection
@@ -1070,6 +1108,8 @@ impl UseCase {
     fn heading(self) -> &'static str {
         match self {
             Self::OneMessage => "A message in one buffer, after other work",
+            Self::IncrementalMessage => "A short message through a fresh incremental hasher, after other work",
+            Self::LentIncrementalMessage => "Short messages through fresh incremental hashers, buffers lent",
             Self::ManyMessages => "A batch of 64-byte messages, after other work",
             Self::ManyLongMessages => "A batch of 4 KiB messages, after other work",
             Self::IdleOneMessage => "A message in one buffer, after idling 5 ms",
@@ -1118,7 +1158,9 @@ impl UseCase {
             | Self::BriefIdleOneMessage
             | Self::ControlledIdleOneMessage
             | Self::ContinuousMessages
-            | Self::LentMessages => "size",
+            | Self::LentMessages
+            | Self::IncrementalMessage
+            | Self::LentIncrementalMessage => "size",
             Self::ReceivingMessage => "arrival spacing",
             Self::Interleaved
             | Self::InterleavedTurn
@@ -1152,6 +1194,8 @@ impl UseCase {
             | Self::ContinuousMessages
             | Self::LentMessages
             | Self::ReceivingMessage
+            | Self::IncrementalMessage
+            | Self::LentIncrementalMessage
             | Self::Interleaved
             | Self::Collection
             | Self::ContinuousCollection
@@ -1221,6 +1265,8 @@ impl UseCase {
             Self::ContinuousBatches => "continuous batch ",
             Self::LentMessages => "lent ",
             Self::ReceivingMessage => "receive ",
+            Self::IncrementalMessage => "incremental ",
+            Self::LentIncrementalMessage => "lent incremental ",
             Self::Interleaved => "interleaved ",
             Self::InterleavedTurn => "turn ",
             Self::IdleInterleavedTurn => "idle turn ",
@@ -1508,7 +1554,10 @@ impl Algorithm {
             | UseCase::ControlledIdleManyMessages
             | UseCase::LentBatches => !matches!(self, Self::Blake3Rayon),
             UseCase::ContinuousBatches => !matches!(self, Self::Blake3Rayon),
-            UseCase::ContinuousMessages | UseCase::ReceivingMessage => true,
+            UseCase::ContinuousMessages
+            | UseCase::ReceivingMessage
+            | UseCase::IncrementalMessage
+            | UseCase::LentIncrementalMessage => true,
             UseCase::OneMessage
             | UseCase::IdleOneMessage
             | UseCase::BriefIdleOneMessage
@@ -4014,6 +4063,13 @@ fn current_cpu() -> Option<u32> {
 fn take_sample(algorithm: Algorithm, input: &[u8], point: Point, iterations: usize) -> DuoCopy {
     if point.use_case.after_gap() {
         let pause_ns = point.use_case.pause_ns();
+        if point.use_case == UseCase::IncrementalMessage {
+            let call = incremental::call(algorithm);
+            return take_prepared_sample(input, true, iterations, pause_ns, |input| {
+                assert_blocks_aligned(input);
+                call(input, point.bytes)
+            });
+        }
         if point.use_case.call() == UseCase::OneMessage {
             // Select the API before the gap and clocks. A cold call should
             // pay for its API, rather than the benchmark's dispatch tree.
@@ -4342,7 +4398,7 @@ fn hash_batch(
     macro_rules! each_contender {
         ($($a:literal)*) => {
             match Algorithm::ALL.iter().position(|a| *a == algorithm) {
-                $(Some($a) => each_use_case!($a: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21),)*
+                $(Some($a) => each_use_case!($a: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23),)*
                 _ => unreachable!("every contender is in Algorithm::ALL"),
             }
         };
@@ -4451,11 +4507,12 @@ fn hash_batch_of(
         UseCase::ContinuousBatches => {
             return hash_continuous_batches(algorithm, input, point, iterations, consume)
         }
-        UseCase::LentMessages | UseCase::LentBatches => {
+        UseCase::LentMessages | UseCase::LentBatches | UseCase::LentIncrementalMessage => {
             return hash_lent(algorithm, input, point, iterations, consume)
         }
         UseCase::MerkleTree => return hash_merkle(algorithm, input, point, iterations, consume),
         UseCase::OneMessage
+        | UseCase::IncrementalMessage
         | UseCase::IdleOneMessage
         | UseCase::BriefIdleOneMessage
         | UseCase::ControlledIdleOneMessage
@@ -4488,6 +4545,20 @@ fn hash_in_memory(
     } else {
         point.bytes
     };
+    if matches!(
+        point.use_case,
+        UseCase::IncrementalMessage | UseCase::LentIncrementalMessage
+    ) {
+        let mut consume = consume;
+        for _ in 0..iterations {
+            incremental::hash(
+                algorithm,
+                &mut |update| update(black_box(&input[..message_len])),
+                &mut consume,
+            );
+        }
+        return;
+    }
     hash_messages(
         algorithm,
         input,
@@ -4813,121 +4884,7 @@ fn hash_stream_from<const RECEIVING: bool>(
     if RECEIVING && algorithm == Algorithm::Blake3ServilMt {
         return pipeline::receive(input, iterations, arrivals, consume);
     }
-    use sha1_checked::digest::Update as _;
-    use sha2::Digest as _;
-    match algorithm {
-        Algorithm::Blake3 => each_stream::<RECEIVING, _>(
-            input,
-            iterations,
-            &arrivals,
-            |pieces| {
-                let mut hasher = blake3::Hasher::new();
-                pieces(&mut |piece| {
-                    hasher.update(piece);
-                });
-                *hasher.finalize().as_bytes()
-            },
-            consume,
-        ),
-        Algorithm::Blake3Rayon => each_stream::<RECEIVING, _>(
-            input,
-            iterations,
-            &arrivals,
-            |pieces| {
-                let mut hasher = blake3::Hasher::new();
-                pieces(&mut |piece| {
-                    hasher.update_rayon(piece);
-                });
-                *hasher.finalize().as_bytes()
-            },
-            consume,
-        ),
-        Algorithm::Blake3ServilSt => each_stream::<RECEIVING, _>(
-            input,
-            iterations,
-            &arrivals,
-            |pieces| {
-                let mut hasher =
-                    blake3_servil::convenience::Hasher::new(blake3_servil::Mode::Plain, None);
-                pieces(&mut |piece| {
-                    hasher.update(piece);
-                });
-                *hasher.finalize().as_bytes()
-            },
-            consume,
-        ),
-        Algorithm::Blake3ServilMt => each_stream::<RECEIVING, _>(
-            input,
-            iterations,
-            &arrivals,
-            |pieces| {
-                let mut hasher =
-                    blake3_servil::convenience::Hasher::new(blake3_servil::Mode::Plain, None);
-                pieces(&mut |piece| {
-                    blake3_servil::throughput::update_multithreaded(&mut hasher, piece);
-                });
-                *hasher.finalize().as_bytes()
-            },
-            consume,
-        ),
-        Algorithm::Sha256 => each_stream::<RECEIVING, _>(
-            input,
-            iterations,
-            &arrivals,
-            |pieces| {
-                let mut hasher = Sha256::new();
-                pieces(&mut |piece| hasher.update(piece));
-                let digest: [u8; 32] = hasher.finalize().into();
-                digest
-            },
-            consume,
-        ),
-        Algorithm::Sha256Ring => each_stream::<RECEIVING, _>(
-            input,
-            iterations,
-            &arrivals,
-            |pieces| {
-                let mut context = ring::digest::Context::new(&ring::digest::SHA256);
-                pieces(&mut |piece| context.update(piece));
-                let mut digest = [0u8; 32];
-                digest.copy_from_slice(context.finish().as_ref());
-                digest
-            },
-            consume,
-        ),
-        Algorithm::Sha256CommonCrypto => each_stream::<RECEIVING, _>(
-            input,
-            iterations,
-            &arrivals,
-            |pieces| common_crypto::sha256_pieces(pieces),
-            consume,
-        ),
-        Algorithm::Sha1Dc => each_stream::<RECEIVING, _>(
-            input,
-            iterations,
-            &arrivals,
-            |pieces| {
-                let mut hasher = sha1_checked::Sha1::new();
-                pieces(&mut |piece| hasher.update(piece));
-                let mut digest = [0u8; 20];
-                digest.copy_from_slice(hasher.try_finalize().hash());
-                digest
-            },
-            consume,
-        ),
-        Algorithm::Sha3_256 => each_stream::<RECEIVING, _>(
-            input,
-            iterations,
-            &arrivals,
-            |pieces| {
-                let mut hasher = sha3::Sha3_256::new();
-                pieces(&mut |piece| sha3::Digest::update(&mut hasher, piece));
-                let digest: [u8; 32] = hasher.finalize().into();
-                digest
-            },
-            consume,
-        ),
-    }
+    each_stream::<RECEIVING>(algorithm, input, iterations, &arrivals, consume);
 }
 
 /*
@@ -5883,18 +5840,18 @@ fn in_flight(buffer_len: usize) -> usize {
     (IN_FLIGHT_BYTES / buffer_len.max(1)).clamp(2, IN_FLIGHT_BUFFERS)
 }
 
-/// The pieces of one stream, each copied into a PIECE_LEN buffer (the
-/// producer's read) and handed to the callback in order.
+/// A producer hands one message's pieces to the incremental update callback
+/// in order. Each workload owns its input preparation.
 type Pieces<'a> = &'a mut dyn FnMut(&mut dyn FnMut(&[u8]));
 
-/// `iterations` streams of `input` through `hash`, which receives the
-/// pieces, copied, in order; the digest of each goes to `consume`.
+/// `iterations` streams of `input` through the shared incremental API
+/// adapter, each piece copied in order; every digest goes to `consume`.
 #[inline(always)]
-fn each_stream<const RECEIVING: bool, D: AsRef<[u8]>>(
+fn each_stream<const RECEIVING: bool>(
+    algorithm: Algorithm,
     input: &[u8],
     iterations: usize,
     arrivals: &impl Fn(&[u8], &mut dyn FnMut(&[u8])),
-    hash: impl Fn(Pieces) -> D,
     mut consume: impl FnMut(&[u8]),
 ) {
     /* The program's read buffer, kept from call to call (a fresh one per
@@ -5918,7 +5875,7 @@ fn each_stream<const RECEIVING: bool, D: AsRef<[u8]>>(
                 }
             }
         };
-        consume(hash(&mut pieces).as_ref());
+        incremental::hash(algorithm, &mut pieces, &mut consume);
     }
     STREAM_BUFFER.with(|kept| *kept.borrow_mut() = buffer);
 }
@@ -5936,7 +5893,11 @@ thread_local! {
  * these.
  */
 #[cfg(test)]
-const SERVIL_CALLS: [(Algorithm, UseCase, &str); 32] = [
+const SERVIL_CALLS: [(Algorithm, UseCase, &str); 36] = [
+    (Algorithm::Blake3ServilSt, UseCase::IncrementalMessage, "convenience::Hasher::new(Mode::Plain, None), one update of the complete message, finalize and consume; fresh hasher per call after other work; same prepared-input copy and alignment as OneMessage"),
+    (Algorithm::Blake3ServilMt, UseCase::IncrementalMessage, "convenience::Hasher::new(Mode::Plain, None), one throughput::update_multithreaded of the complete message, finalize and consume; fresh hasher per call after other work; same prepared-input copy and alignment as OneMessage"),
+    (Algorithm::Blake3ServilSt, UseCase::LentIncrementalMessage, "convenience::Hasher::new(Mode::Plain, None), one update of the complete message, finalize and consume; fresh hasher per nonstop call; same kept-buffer input copy as LentMessages"),
+    (Algorithm::Blake3ServilMt, UseCase::LentIncrementalMessage, "convenience::Hasher::new(Mode::Plain, None), one throughput::update_multithreaded of the complete message, finalize and consume; fresh hasher per nonstop call; same kept-buffer input copy as LentMessages"),
     (Algorithm::Blake3ServilSt, UseCase::ReceivingMessage, "convenience::Hasher::new(Mode::Plain, None), update per received fragment, finalize after the last; 1448 B, 4 KiB, 16 KiB and 64 KiB arrivals in a repeating cycle, cut at message end; a kept 64 KiB receive buffer; fixed arrival deadlines from the first fragment (saturated, 2 μs, 20 μs); reads, waits, updates and finalization timed together"),
     (Algorithm::Blake3ServilMt, UseCase::ReceivingMessage, "throughput::Pipeline kept per producer (1024 message slots, 16 rooms of 64 KiB); message with no length hint, received fragments accumulated directly in rooms, commit each full room and the final partial room, end, then consume the Hashed event before the next message; the same fragment trace and fixed deadlines as servil st; reads, waits, commits and completion timed together"),
     (Algorithm::Blake3ServilSt, UseCase::InterleavedTurn, "the Hashers of the open messages (256 in pieces up to 16 KiB, one call of turns of up to 64 pieces, 256 KiB; or 1,024 of 1 KiB in 256-byte pieces, one call a whole cycle, four turns of a piece of each message), each after other work: throughput::update_each, then throughput::finalize_each for the messages that ended in it"),
@@ -6829,6 +6790,8 @@ fn continuous_min_inputs(input: &[u8], point: Point) -> usize {
         }
         UseCase::ContinuousBatches => 2 * in_flight(input.len()),
         UseCase::OneMessage
+        | UseCase::IncrementalMessage
+        | UseCase::LentIncrementalMessage
         | UseCase::IdleOneMessage
         | UseCase::BriefIdleOneMessage
         | UseCase::ControlledIdleOneMessage
@@ -10753,7 +10716,7 @@ mod correctness_tests {
         }
         assert_eq!(
             UseCase::ReceivingMessage.points(),
-            turn + 4 * TURN_COUNT..POINT_COUNT
+            turn + 4 * TURN_COUNT..turn + 4 * TURN_COUNT + 3
         );
         let covered: Vec<_> = UseCase::ALL.into_iter().flat_map(UseCase::points).collect();
         assert_eq!(covered, (0..POINT_COUNT).collect::<Vec<_>>());

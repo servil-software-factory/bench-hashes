@@ -1,5 +1,11 @@
 # Unreleased
 
+**Short incremental-hasher lifetimes are measured.** Six points cover
+64 B, 1 KiB and 4 KiB after other work and under sustained synchronous calls.
+Each operation creates a hasher, updates once, finalizes and consumes its
+result. Input preparation matches the corresponding one-shot baseline.
+The map gives this caller pattern its own row.
+
 **BLAKE3-Servil's Pipeline receives streaming workloads.** The multithreaded
 contender's owned continuous messages, batches and collections use
 `throughput::Pipeline`, as does receiving a fragmented message. Input copies,

@@ -31,6 +31,18 @@ documents that explain the benchmark (README, METHODOLOGY, CONTRIBUTING,
 the notes) may still change, to say it better.
 
 **Changes for the next release** (Devon Jonte, November 14, 2026):
+- **Short incremental-hasher lifetimes**
+  ([coverage](https://github.com/servil-software-factory/bench-hashes/issues/209)).
+  Six points measure 64 B, 1 KiB and 4 KiB through a fresh incremental
+  hasher, after other work and under sustained synchronous calls. Each
+  operation creates the hasher, updates once with the complete message,
+  finalizes and consumes the digest. The after-work cells use OneMessage's
+  preparation and preselected call; nonstop cells use LentMessages' kept
+  buffer and one input copy per message. Every contender uses its existing
+  incremental entry point. Construction, update and finalization are shared
+  with the long-stream adapter. The one-shot baselines stay unchanged.
+  Long incremental messages amortize initialization costs that callers of
+  short records pay in full; these cells keep that cost visible.
 - **The Pipeline drives owned continuous workloads and receiving**
   ([Pipeline cells](https://github.com/servil-software-factory/bench-hashes/issues/169)).
   BLAKE3-Servil mt uses the new `throughput::Pipeline` for continuous
@@ -1359,11 +1371,17 @@ use case IdleInterleavedTurn: 256, 1024 x 1 KiB
 use case BriefIdleInterleavedTurn: 256, 1024 x 1 KiB
 use case ControlledIdleInterleavedTurn: 256, 1024 x 1 KiB
 use case ReceivingMessage: saturated, 2 μs, 20 μs
+use case IncrementalMessage: 64 B, 1 KiB, 4 KiB
+use case LentIncrementalMessage: 64 B, 1 KiB, 4 KiB
 receive trace: 16777216 B per message; fragment cycle 1448, 4096, 16384, 65536 B; arrival spacing saturated: 0 ns, 2 μs: 2000 ns, 20 μs: 20000 ns; deadlines fixed from the first arrival, independent of consumer work; receiving through finalization timed together
 scenarios: solo, shared-one-cache, shared-two-caches, shared-os
-shared measures: ContinuousMessages, ContinuousBatches, LentMessages, Interleaved, Collection, LentBatches, ContinuousCollection, MerkleTree, ReceivingMessage
+shared measures: ContinuousMessages, ContinuousBatches, LentMessages, Interleaved, Collection, LentBatches, ContinuousCollection, MerkleTree, ReceivingMessage, LentIncrementalMessage
 shared placements: two cores under one last-level cache; two cores under two (where the machine has two); where it offers no pair (macOS), wherever the OS runs them
 shared contenders: blake3-official-mt, blake3-servil-mt
+blake3-servil-st IncrementalMessage: convenience::Hasher::new(Mode::Plain, None), one update of the complete message, finalize and consume; fresh hasher per call after other work; same prepared-input copy and alignment as OneMessage
+blake3-servil-mt IncrementalMessage: convenience::Hasher::new(Mode::Plain, None), one throughput::update_multithreaded of the complete message, finalize and consume; fresh hasher per call after other work; same prepared-input copy and alignment as OneMessage
+blake3-servil-st LentIncrementalMessage: convenience::Hasher::new(Mode::Plain, None), one update of the complete message, finalize and consume; fresh hasher per nonstop call; same kept-buffer input copy as LentMessages
+blake3-servil-mt LentIncrementalMessage: convenience::Hasher::new(Mode::Plain, None), one throughput::update_multithreaded of the complete message, finalize and consume; fresh hasher per nonstop call; same kept-buffer input copy as LentMessages
 blake3-servil-st ReceivingMessage: convenience::Hasher::new(Mode::Plain, None), update per received fragment, finalize after the last; 1448 B, 4 KiB, 16 KiB and 64 KiB arrivals in a repeating cycle, cut at message end; a kept 64 KiB receive buffer; fixed arrival deadlines from the first fragment (saturated, 2 μs, 20 μs); reads, waits, updates and finalization timed together
 blake3-servil-mt ReceivingMessage: throughput::Pipeline kept per producer (1024 message slots, 16 rooms of 64 KiB); message with no length hint, received fragments accumulated directly in rooms, commit each full room and the final partial room, end, then consume the Hashed event before the next message; the same fragment trace and fixed deadlines as servil st; reads, waits, commits and completion timed together
 blake3-servil-st InterleavedTurn: the Hashers of the open messages (256 in pieces up to 16 KiB, one call of turns of up to 64 pieces, 256 KiB; or 1,024 of 1 KiB in 256-byte pieces, one call a whole cycle, four turns of a piece of each message), each after other work: throughput::update_each, then throughput::finalize_each for the messages that ended in it

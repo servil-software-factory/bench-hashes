@@ -93,6 +93,18 @@ fn place(use_case: UseCase) -> (&'static str, &'static str, &'static str, &'stat
             "throughput::hash_multithreaded",
             "performance/fn.hash_multithreaded.html",
         ),
+        UseCase::IncrementalMessage => (
+            "incremental",
+            "busy",
+            "convenience::Hasher",
+            "convenience/struct.Hasher.html",
+        ),
+        UseCase::LentIncrementalMessage => (
+            "incremental",
+            "lent",
+            "convenience::Hasher",
+            "convenience/struct.Hasher.html",
+        ),
         UseCase::ReceivingMessage => (
             "one",
             "receiving",
@@ -835,6 +847,7 @@ fn hashing(path: &Path) -> Section {
         title: "How fast each hash runs, by what a program hashes and how it calls",
         rows: vec![
             ("one", "one message", "One logical message."),
+            ("incremental", "one short message, fresh hasher", "Create an incremental hasher, update once with the complete message, finalize and consume its digest. A fresh hasher for every message."),
             ("batch", "a batch of short messages", "Many 64-byte messages hashed together, such as a Merkle tree's nodes; the axis counts the messages."),
             ("long", "a batch of longer messages", "Many 4 KiB messages hashed together, such as a store's blocks or a backup's chunks; the axis counts the messages."),
             ("merkle", "a Merkle tree", "A Merkle tree over 256-byte leaves the program has just written into place, leaves and parents hashed apart, every layer kept, as a zero-knowledge prover commits to its Reed-Solomon codeword (WHIR); the axis counts the leaves."),
@@ -1227,6 +1240,13 @@ mod tests {
             )
         );
         assert_eq!(call(super::UseCase::LentMessages).0, "throughput::hash");
+        for use_case in [
+            super::UseCase::IncrementalMessage,
+            super::UseCase::LentIncrementalMessage,
+        ] {
+            assert_eq!(call(use_case).0, "convenience::Hasher");
+            assert_eq!(super::row_and_column(use_case).0, "incremental");
+        }
         for use_case in [
             super::UseCase::ContinuousMessages,
             super::UseCase::ContinuousCollection,

@@ -10,8 +10,9 @@ it measures, and keep your results comparable with ours.
   report, `compare` and `regress`); `src/check.rs`, `bench-hashes check`;
   `src/map.rs` and `src/map.html`, the map; `src/overview.rs` and
   `src/overview.html`, the overview page; `src/chart.rs`, the charts;
-  `src/b3sum.rs`, `bench-hashes b3sum`; `src/leaves.rs`, `bench-hashes
-  leaves`; `src/crowd.rs`, `bench-hashes crowd` (many programs at once); `src/fingerprint.rs`, a dirty tree's fingerprint, shared with
+  `src/b3sum.rs`, `bench-hashes b3sum`; `src/incremental.rs`, the shared
+  incremental-hasher calls; `src/pipeline.rs`, owned streaming and receiving;
+  `src/crowd.rs`, `bench-hashes crowd` (many programs at once); `src/fingerprint.rs`, a dirty tree's fingerprint, shared with
   `build.rs`; `src/harness_tests.rs`, tests of the benchmark's own work
   (zeroing, orders, the output directory); `src/diag_alloc.rs`,
   diagnostic allocators for the cache-line study (#65), never a
