@@ -131,10 +131,13 @@ independent of consumer work. `clocks::sleep_until` waits only for the
 remaining time. A late consumer finds data ready, as with buffered I/O.
 The saturated producer makes no clock reads or waits between fragments.
 
-Each contender receives fragments into its kept 64 KiB buffer (a memory
-copy) and uses its incremental API, including `update_multithreaded` for
-BLAKE3-Servil mt. Finalization follows the final fragment. The consumer
-receives no length declaration before the message ends.
+Each synchronous contender receives fragments into its kept 64 KiB buffer
+(a memory copy) and uses its incremental API. BLAKE3-Servil mt receives
+straight into its Pipeline's 64 KiB rooms, committing each filled room
+and the final partial room. A fragment may fill one room and continue in
+the next. Finalization follows the final fragment, and the call consumes
+the completed hash before starting another message. The consumer receives
+no length declaration before the message ends.
 
 The result includes the reads, arrival waits, updates and finalization.
 Its rate describes end-to-end reception and hashing. This differs from a
@@ -144,8 +147,8 @@ The map gives this case its own "receive + hash, including waits" column.
 
 The saturated case exposes hashing/production throughput. Paced arrivals
 show the cost beside I/O and let background hashing use the time between
-callbacks. The synchronous incremental calls are the baseline for
-BLAKE3-Servil's Pipeline, whose cells join when its calls exist.
+callbacks. The single-threaded incremental contenders provide synchronous
+baselines alongside BLAKE3-Servil's Pipeline.
 
 ## One input after another
 
@@ -158,11 +161,23 @@ timed from the first read to the last digest. Every contender but BLAKE3
 servil mt hashes each input after reading it, so reading and hashing take
 turns: a message of up to 64 KiB through its one-shot call, a longer one
 through its incremental API per 64 KiB piece, a batch as the batch use
-case hashes it. That holds for BLAKE3-Servil mt too: the library has no
-streaming API between its stream, which left with 0.9, and the Pipeline
-to come, whose cells these will be (bench-hashes #169). The servil single-threaded contender measures continuous load in the
-lent-buffer tasks, where its synchronous calls serve the one-thread
-column of the API plan.
+case hashes it.
+
+BLAKE3-Servil mt copies messages and collection items directly into
+Pipeline rooms. Its kept Pipeline has 16 rooms of 64 KiB (1 MiB of input
+storage) and 1024 message slots. Short messages share a room; longer ones
+commit full rooms until the final piece. Completed hashes are consumed
+at the message limit and every remaining result is consumed before the
+sample ends. The batch cells hand over owned `Batch` inputs and digest
+boxes, then consume the returned digests before refilling that storage.
+Their input budget is about 1 MiB, with at least two and at most 1024
+buffers. Each producer keeps its Pipeline and storage across samples.
+
+The lent-buffer cells keep synchronous calls, including BLAKE3-Servil mt,
+for programs that lend a buffer and wait before writing the next input.
+These provide a baseline beside the owned Pipeline cells. Each result
+includes input production and completion. Pipeline and storage creation
+happen during calibration, outside steady-state samples.
 
 ## A batch
 

@@ -19,6 +19,23 @@ use std::path::Path;
 /// `throughput::hash` for one after another, and elsewhere the call
 /// without its `_multithreaded`.
 fn one_thread_call(column: &str, call: &str, doc: &str) -> (String, String) {
+    if call.starts_with("throughput::Pipeline") {
+        return match column {
+            "receiving" => (
+                "convenience::Hasher::update".to_owned(),
+                "convenience/struct.Hasher.html#method.update".to_owned(),
+            ),
+            "piped" if call.ends_with("::batch") => (
+                "throughput::hash_many".to_owned(),
+                "throughput/fn.hash_many.html".to_owned(),
+            ),
+            "piped" => (
+                "throughput::hash".to_owned(),
+                "throughput/fn.hash.html".to_owned(),
+            ),
+            _ => unreachable!("Pipeline serves owned and receiving cells"),
+        };
+    }
     if call == "throughput::hash_multithreaded" {
         return if matches!(column, "lent" | "piped") {
             (
@@ -79,8 +96,8 @@ fn place(use_case: UseCase) -> (&'static str, &'static str, &'static str, &'stat
         UseCase::ReceivingMessage => (
             "one",
             "receiving",
-            "throughput::Hasher::update_multithreaded",
-            "throughput/struct.Hasher.html#method.update_multithreaded",
+            "throughput::Pipeline::commit",
+            "throughput/struct.Pipeline.html#method.commit",
         ),
         UseCase::LentMessages => (
             "one",
@@ -91,8 +108,8 @@ fn place(use_case: UseCase) -> (&'static str, &'static str, &'static str, &'stat
         UseCase::ContinuousMessages => (
             "one",
             "piped",
-            "throughput::hash_multithreaded",
-            "performance/fn.hash_multithreaded.html",
+            "throughput::Pipeline::commit",
+            "throughput/struct.Pipeline.html#method.commit",
         ),
         UseCase::ManyMessages => (
             "batch",
@@ -133,8 +150,8 @@ fn place(use_case: UseCase) -> (&'static str, &'static str, &'static str, &'stat
         UseCase::ContinuousBatches => (
             "batch",
             "piped",
-            "throughput::hash_many_multithreaded",
-            "performance/fn.hash_many_multithreaded.html",
+            "throughput::Pipeline::batch",
+            "throughput/struct.Pipeline.html#method.batch",
         ),
         UseCase::Interleaved => (
             "many",
@@ -175,8 +192,8 @@ fn place(use_case: UseCase) -> (&'static str, &'static str, &'static str, &'stat
         UseCase::ContinuousCollection => (
             "coll",
             "piped",
-            "throughput::hash_multithreaded",
-            "performance/fn.hash_multithreaded.html",
+            "throughput::Pipeline::commit",
+            "throughput/struct.Pipeline.html#method.commit",
         ),
         UseCase::MerkleTree => (
             "merkle",
@@ -1210,6 +1227,25 @@ mod tests {
             )
         );
         assert_eq!(call(super::UseCase::LentMessages).0, "throughput::hash");
+        for use_case in [
+            super::UseCase::ContinuousMessages,
+            super::UseCase::ContinuousCollection,
+        ] {
+            assert_eq!(call(use_case).0, "throughput::hash");
+            assert_eq!(super::place(use_case).2, "throughput::Pipeline::commit");
+        }
+        assert_eq!(
+            call(super::UseCase::ContinuousBatches).0,
+            "throughput::hash_many"
+        );
+        assert_eq!(
+            super::place(super::UseCase::ContinuousBatches).2,
+            "throughput::Pipeline::batch"
+        );
+        assert_eq!(
+            super::place(super::UseCase::ReceivingMessage).2,
+            "throughput::Pipeline::commit"
+        );
         assert_eq!(
             call(super::UseCase::ManyMessages).0,
             "throughput::hash_many"

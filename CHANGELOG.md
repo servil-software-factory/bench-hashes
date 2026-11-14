@@ -1,3 +1,12 @@
+# Unreleased
+
+**BLAKE3-Servil's Pipeline receives streaming workloads.** The multithreaded
+contender's owned continuous messages, batches and collections use
+`throughput::Pipeline`, as does receiving a fragmented message. Input copies,
+arrival waits and consuming every completed result stay in the timed work.
+The lent-buffer cells retain synchronous calls for comparison. The library
+pin is `f62bc6ac0bc1c86861659d61ffbf4e9546bc8aec`.
+
 # bench-hashes 0.22.0+d7723f110a6f519cccb2e4ab8f2a18be7a4f4d41
 
 **Every cell's timed code is compiled by itself.** Each contender's loop for each use case is now a function of its own, so a change in one contender's code cannot shift how another's cell is laid out. Until now a use case's loops for every contender shared one large function, and on one machine that moved a cell 8 to 15% when unrelated code changed. The calls measured are the same.

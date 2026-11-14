@@ -1,3 +1,4 @@
+mod pipeline;
 mod receive;
 
 use sha2::{Digest, Sha256};
@@ -1617,7 +1618,7 @@ impl Algorithm {
             | Self::Sha3_256 => "single-threaded",
             Self::Blake3ServilSt => "single-threaded; convenience::hash for one message after a gap and throughput::hash for one after another, throughput::hash_many for a batch, convenience::Hasher::update per piece for many messages at once",
             Self::Blake3Rayon => "multithreaded; Hasher::update_rayon (per piece, for a stream) on Rayon's global pool, the crate's own multithreading as a program gets it by default: the tree splits recursively over the pool, and inputs under a few chunks stay on the caller's thread",
-            Self::Blake3ServilMt => "multithreaded; throughput::hash_multithreaded for one message, throughput::hash_many_multithreaded for a batch, throughput::update_multithreaded into a convenience::Hasher per piece for many messages at once; continuous loads through the same calls, one input after another (no streaming API in this library): BLAKE3-Servil chooses when to wake its worker threads",
+            Self::Blake3ServilMt => "multithreaded; throughput::hash_multithreaded for one message, throughput::hash_many_multithreaded for a batch, throughput::update_multithreaded into a convenience::Hasher per piece for many messages at once; owned continuous loads and receiving through throughput::Pipeline, lent buffers through synchronous calls: BLAKE3-Servil chooses when to wake its worker threads",
         }
     }
 }
@@ -4693,8 +4694,8 @@ fn input_len(point: Point) -> usize {
  * A collection pipelined (UseCase::ContinuousCollection): `iterations`
  * passes over its items, one after another, each read into a buffer of the
  * program's, then hashed, its digest into `consume`. BLAKE3-Servil mt reads
- * each straight into its stream's ring (submit_with) and hashes on its
- * workers while the next is read; every other hash, on the program's thread
+ * each straight into Pipeline rooms and hashes on its workers while the
+ * next is read; every other hash, on the program's thread
  * after reading it, as it hashes one message in memory.
  */
 #[inline(always)]
@@ -4706,6 +4707,16 @@ fn hash_continuous_collection(
     mut consume: impl FnMut(&[u8]),
 ) {
     let items = items_of(point, input);
+    if algorithm == Algorithm::Blake3ServilMt {
+        return pipeline::messages(
+            (0..iterations).flat_map(|_| {
+                items
+                    .iter()
+                    .map(|&(offset, len)| &input[offset..offset + len])
+            }),
+            consume,
+        );
+    }
     let longest = items.iter().map(|&(_, len)| len).max().unwrap_or(0);
     let mut buffers = take_buffers(1, longest + BLOCK_SPARE);
     for _ in 0..iterations {
@@ -4799,6 +4810,9 @@ fn hash_stream_from<const RECEIVING: bool>(
     consume: impl FnMut(&[u8]),
     arrivals: impl Fn(&[u8], &mut dyn FnMut(&[u8])),
 ) {
+    if RECEIVING && algorithm == Algorithm::Blake3ServilMt {
+        return pipeline::receive(input, iterations, arrivals, consume);
+    }
     use sha1_checked::digest::Update as _;
     use sha2::Digest as _;
     match algorithm {
@@ -5228,8 +5242,8 @@ fn read_into_buffer<S>(
  * into `consume`. Every contender but BLAKE3-Servil's multithreaded one
  * hashes each message after reading it, one call for a message of up to
  * PIECE_LEN, its incremental API per piece for a longer one, so reading
- * and hashing take turns; BLAKE3-Servil's queue takes the program's buffers
- * and hashes while the next are read.
+ * and hashing take turns; BLAKE3-Servil's Pipeline lends rooms to the
+ * producer and hashes committed bytes while the next are read.
  */
 /// THE BENCHMARKS REPRESENT THIS IN TWO DIFFERENT WAYS TO USERS (the
 /// map's and the report's "buffers owned" and "buffers lent" rows), so if
@@ -5241,14 +5255,11 @@ fn read_into_buffer<S>(
 ///
 /// Whether a contender's continuous cell with buffers owned runs the same
 /// calls on the same input as its cell with buffers lent, at a message of
-/// `len` bytes (a batch: `None`): every contender, at messages that arrive
-/// in one buffer (up to PIECE_LEN) and at batches. BLAKE3-Servil's stream
-/// was the exception until the library dropped it (bench-hashes #169);
-/// its Pipeline will be the next. The owned cells dispatch through it
-/// (hash_continuous_messages, hash_continuous_batches), so a contender
-/// that gains a path of its own for owned buffers changes it.
-fn owned_runs_lent(_algorithm: Algorithm, len: Option<usize>) -> bool {
-    len.is_none_or(|len| len <= PIECE_LEN)
+/// `len` bytes (a batch: `None`): synchronous contenders at messages that
+/// arrive in one buffer (up to PIECE_LEN), and at batches. Servil mt's
+/// owned cells use Pipeline while its lent cells keep synchronous calls.
+fn owned_runs_lent(algorithm: Algorithm, len: Option<usize>) -> bool {
+    algorithm != Algorithm::Blake3ServilMt && len.is_none_or(|len| len <= PIECE_LEN)
 }
 
 /// Each owned cell measured as its lent twin (lent_twin) takes the twin's
@@ -5303,6 +5314,9 @@ fn hash_continuous_messages(
 ) {
     // The message's `len` bytes; `blocks`, its whole blocks (UseCase::in_blocks).
     let input = &blocks[..len];
+    if algorithm == Algorithm::Blake3ServilMt {
+        return pipeline::messages(std::iter::repeat_n(input, iterations), consume);
+    }
     if !owned_runs_lent(algorithm, Some(len)) {
         return hash_stream(algorithm, input, iterations, consume);
     }
@@ -5322,8 +5336,8 @@ fn hash_continuous_messages(
  * `input` read into a buffer of the program's, then hashed, the batch's
  * digests into `consume`. Every contender but BLAKE3-Servil's
  * multithreaded one hashes each batch after reading it, as it hashes a
- * batch in memory (hash_batch); BLAKE3-Servil's queue of fixed-length messages
- * takes the program's buffers and hashes while the next are read.
+ * batch in memory (hash_batch); BLAKE3-Servil's Pipeline takes owned
+ * batches and digest boxes, returning both for reuse after completion.
  */
 #[inline(always)]
 fn hash_continuous_batches(
@@ -5333,6 +5347,9 @@ fn hash_continuous_batches(
     iterations: usize,
     consume: impl FnMut(&[u8]),
 ) {
+    if algorithm == Algorithm::Blake3ServilMt {
+        return pipeline::batches(input, point.messages, iterations, consume);
+    }
     // The lent cell's calls (owned_runs_lent): each batch read into a kept
     // buffer, then hashed through the batch call (the point's own use
     // case: in blocks and a batch, as the lent one is).
@@ -5921,7 +5938,7 @@ thread_local! {
 #[cfg(test)]
 const SERVIL_CALLS: [(Algorithm, UseCase, &str); 32] = [
     (Algorithm::Blake3ServilSt, UseCase::ReceivingMessage, "convenience::Hasher::new(Mode::Plain, None), update per received fragment, finalize after the last; 1448 B, 4 KiB, 16 KiB and 64 KiB arrivals in a repeating cycle, cut at message end; a kept 64 KiB receive buffer; fixed arrival deadlines from the first fragment (saturated, 2 μs, 20 μs); reads, waits, updates and finalization timed together"),
-    (Algorithm::Blake3ServilMt, UseCase::ReceivingMessage, "convenience::Hasher::new(Mode::Plain, None), update_multithreaded per received fragment, finalize after the last; 1448 B, 4 KiB, 16 KiB and 64 KiB arrivals in a repeating cycle, cut at message end; a kept 64 KiB receive buffer; fixed arrival deadlines from the first fragment (saturated, 2 μs, 20 μs); reads, waits, updates and finalization timed together"),
+    (Algorithm::Blake3ServilMt, UseCase::ReceivingMessage, "throughput::Pipeline kept per producer (1024 message slots, 16 rooms of 64 KiB); message with no length hint, received fragments accumulated directly in rooms, commit each full room and the final partial room, end, then consume the Hashed event before the next message; the same fragment trace and fixed deadlines as servil st; reads, waits, commits and completion timed together"),
     (Algorithm::Blake3ServilSt, UseCase::InterleavedTurn, "the Hashers of the open messages (256 in pieces up to 16 KiB, one call of turns of up to 64 pieces, 256 KiB; or 1,024 of 1 KiB in 256-byte pieces, one call a whole cycle, four turns of a piece of each message), each after other work: throughput::update_each, then throughput::finalize_each for the messages that ended in it"),
     (Algorithm::Blake3ServilSt, UseCase::IdleInterleavedTurn, "the Hashers of the open messages (256 in pieces up to 16 KiB, one call of turns of up to 64 pieces, 256 KiB; or 1,024 of 1 KiB in 256-byte pieces, one call a whole cycle, four turns of a piece of each message), each after idling: throughput::update_each, then throughput::finalize_each for the messages that ended in it"),
     (Algorithm::Blake3ServilMt, UseCase::InterleavedTurn, "the Hashers of the open messages (256 in pieces up to 16 KiB, one call of turns of up to 64 pieces, 256 KiB; or 1,024 of 1 KiB in 256-byte pieces, one call a whole cycle, four turns of a piece of each message), each after other work: throughput::update_each_multithreaded, then throughput::finalize_each for the messages that ended in it"),
@@ -5934,11 +5951,11 @@ const SERVIL_CALLS: [(Algorithm, UseCase, &str); 32] = [
     (Algorithm::Blake3ServilMt, UseCase::ManyMessages, "throughput::hash_many_multithreaded(Mode::Plain, &Batch::from_blocks(blocks, 64), out), the batch borrowed in place, each call after other work"),
     (Algorithm::Blake3ServilSt, UseCase::ManyLongMessages, "throughput::hash_many(Mode::Plain, &Batch::from_blocks(blocks, 4096), out), the batch borrowed in place, each call after other work"),
     (Algorithm::Blake3ServilMt, UseCase::ManyLongMessages, "throughput::hash_many_multithreaded(Mode::Plain, &Batch::from_blocks(blocks, 4096), out), the batch borrowed in place, each call after other work"),
-    (Algorithm::Blake3ServilMt, UseCase::ContinuousMessages, "throughput::hash_multithreaded(Mode::Plain, blocks, len), one message after another, each read into a kept buffer of the program's in whole blocks and hashed before the next is read (above 64 KiB a Hasher fed 64 KiB pieces by update_multithreaded)"),
-    (Algorithm::Blake3ServilMt, UseCase::ContinuousBatches, "throughput::hash_many_multithreaded(Mode::Plain, &Batch::from_blocks(blocks, 64), out), the batch borrowed in place, one batch after another, each read into a kept buffer of the program's and hashed before the next is read"),
+    (Algorithm::Blake3ServilMt, UseCase::ContinuousMessages, "throughput::Pipeline kept per producer (1024 message slots, 16 rooms of 64 KiB); message, copy into rooms, commit, end; short messages share a room, each nonfinal commit of a long message fills a room; consume Hashed events at the message limit and drain every result before the sample ends"),
+    (Algorithm::Blake3ServilMt, UseCase::ContinuousBatches, "throughput::Pipeline and owned Batch inputs and digest boxes kept per producer and batch size; about 1 MiB of input buffers, at least 2 and at most 1024; refill by one bulk copy, message, batch; consume each Batch event's digests before reusing its storage, drain every result before the sample ends"),
     (Algorithm::Blake3ServilSt, UseCase::ContinuousMessages, "throughput::hash(Mode::Plain, blocks, len), one message after another, each read into a kept buffer of the program's in whole blocks and hashed on its thread (a Hasher fed 64 KiB pieces above 64 KiB)"),
     (Algorithm::Blake3ServilSt, UseCase::ContinuousBatches, "throughput::hash_many(Mode::Plain, &Batch::from_blocks(blocks, 64), out), the batch borrowed in place, one batch after another, each read into a kept buffer of the program's and hashed on its thread"),
-    (Algorithm::Blake3ServilMt, UseCase::ContinuousCollection, "throughput::hash_multithreaded(Mode::Plain, blocks, len), the collection's messages one after another, each read into a kept buffer of the program's in whole blocks and hashed before the next is read"),
+    (Algorithm::Blake3ServilMt, UseCase::ContinuousCollection, "throughput::Pipeline, the same rooms and calls as ContinuousMessages, the collection's items in order, each copied once into rooms; consume every item's Hashed event before the sample ends"),
     (Algorithm::Blake3ServilSt, UseCase::ContinuousCollection, "throughput::hash(Mode::Plain, blocks, len), the collection's messages one after another, each read into a kept buffer of the program's in whole blocks and hashed on its thread"),
     (Algorithm::Blake3ServilSt, UseCase::LentMessages, "throughput::hash(Mode::Plain, blocks, len), one message after another, each read into a kept buffer in whole blocks and lent until the call returns"),
     (Algorithm::Blake3ServilSt, UseCase::Interleaved, "a Hasher per open message, 256 messages open at once, the pieces arriving in turns of 64, each read into its own kept buffer; throughput::update_each per turn, then throughput::finalize_each for the messages that ended in it, each buffer lent until the calls return"),
@@ -10168,8 +10185,8 @@ mod correctness_tests {
             "servil st's owned 4 KiB is its lent twin: the twin's size"
         );
         assert_eq!(
-            sizes[1][owned], 1001,
-            "servil mt's owned 4 KiB is its lent twin too, with no stream"
+            sizes[1][owned], 1,
+            "servil mt's Pipeline owned cell keeps its independently calibrated size"
         );
         assert_eq!(
             (sizes[0][long_owned], sizes[1][long_owned]),
@@ -10226,10 +10243,10 @@ mod correctness_tests {
             ns(&samples.solo[0][lent]),
             "servil st: the owned cell is the lent cell"
         );
-        assert_eq!(
+        assert_ne!(
             ns(&samples.solo[1][owned]),
             ns(&samples.solo[1][lent]),
-            "servil mt, with no stream: the owned cell is the lent cell"
+            "servil mt's Pipeline and synchronous calls are measured independently"
         );
         let (long_owned, long_lent) = (
             point("1 MiB", UseCase::ContinuousMessages),

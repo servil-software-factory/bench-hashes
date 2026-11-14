@@ -30,6 +30,26 @@ read as alike. The
 documents that explain the benchmark (README, METHODOLOGY, CONTRIBUTING,
 the notes) may still change, to say it better.
 
+**Changes for the next release** (Devon Jonte, November 14, 2026):
+- **The Pipeline drives owned continuous workloads and receiving**
+  ([Pipeline cells](https://github.com/servil-software-factory/bench-hashes/issues/169)).
+  BLAKE3-Servil mt uses the new `throughput::Pipeline` for continuous
+  messages, batches, collections and receiving. Keep the existing inputs,
+  producer copies, arrival deadlines and result consumption. Messages and
+  collections use 16 rooms of 64 KiB and 1024 message slots, kept per
+  producer. Short messages share rooms. Long messages commit full rooms
+  until their final partial room. Receiving accumulates fragments directly
+  in a room, declares no length, and awaits the hash after the last fragment.
+  Batches own their input and digest storage, reused only after completion;
+  their existing `in_flight` budget stays about 1 MiB, at least two buffers
+  and at most 1024. Pipeline construction and buffer allocation happen in
+  calibration; each sample includes producing inputs and consuming every
+  submitted result. Lent-buffer cells retain the synchronous calls as the
+  baseline for callers that lend one buffer and wait before writing again.
+  Owned Pipeline cells are measured independently of those lent cells.
+  This changes the measured API, so comparisons against earlier benchmarks
+  must retain that qualification. Performance acceptance follows measurement.
+
 **Changes for 0.22, November 12-13, 2026** (Devon Jonte's decisions, each dated):
 - **The pin is BLAKE3-Servil 0.9.0** (Devon Jonte, November 13, 2026):
   commit bf2da8b957f5e0c80babb57952de3e53f95c921a, the release
@@ -1345,7 +1365,7 @@ shared measures: ContinuousMessages, ContinuousBatches, LentMessages, Interleave
 shared placements: two cores under one last-level cache; two cores under two (where the machine has two); where it offers no pair (macOS), wherever the OS runs them
 shared contenders: blake3-official-mt, blake3-servil-mt
 blake3-servil-st ReceivingMessage: convenience::Hasher::new(Mode::Plain, None), update per received fragment, finalize after the last; 1448 B, 4 KiB, 16 KiB and 64 KiB arrivals in a repeating cycle, cut at message end; a kept 64 KiB receive buffer; fixed arrival deadlines from the first fragment (saturated, 2 μs, 20 μs); reads, waits, updates and finalization timed together
-blake3-servil-mt ReceivingMessage: convenience::Hasher::new(Mode::Plain, None), update_multithreaded per received fragment, finalize after the last; 1448 B, 4 KiB, 16 KiB and 64 KiB arrivals in a repeating cycle, cut at message end; a kept 64 KiB receive buffer; fixed arrival deadlines from the first fragment (saturated, 2 μs, 20 μs); reads, waits, updates and finalization timed together
+blake3-servil-mt ReceivingMessage: throughput::Pipeline kept per producer (1024 message slots, 16 rooms of 64 KiB); message with no length hint, received fragments accumulated directly in rooms, commit each full room and the final partial room, end, then consume the Hashed event before the next message; the same fragment trace and fixed deadlines as servil st; reads, waits, commits and completion timed together
 blake3-servil-st InterleavedTurn: the Hashers of the open messages (256 in pieces up to 16 KiB, one call of turns of up to 64 pieces, 256 KiB; or 1,024 of 1 KiB in 256-byte pieces, one call a whole cycle, four turns of a piece of each message), each after other work: throughput::update_each, then throughput::finalize_each for the messages that ended in it
 blake3-servil-st IdleInterleavedTurn: the Hashers of the open messages (256 in pieces up to 16 KiB, one call of turns of up to 64 pieces, 256 KiB; or 1,024 of 1 KiB in 256-byte pieces, one call a whole cycle, four turns of a piece of each message), each after idling: throughput::update_each, then throughput::finalize_each for the messages that ended in it
 blake3-servil-mt InterleavedTurn: the Hashers of the open messages (256 in pieces up to 16 KiB, one call of turns of up to 64 pieces, 256 KiB; or 1,024 of 1 KiB in 256-byte pieces, one call a whole cycle, four turns of a piece of each message), each after other work: throughput::update_each_multithreaded, then throughput::finalize_each for the messages that ended in it
@@ -1358,11 +1378,11 @@ blake3-servil-mt OneMessage: throughput::hash_multithreaded(Mode::Plain, blocks,
 blake3-servil-mt ManyMessages: throughput::hash_many_multithreaded(Mode::Plain, &Batch::from_blocks(blocks, 64), out), the batch borrowed in place, each call after other work
 blake3-servil-st ManyLongMessages: throughput::hash_many(Mode::Plain, &Batch::from_blocks(blocks, 4096), out), the batch borrowed in place, each call after other work
 blake3-servil-mt ManyLongMessages: throughput::hash_many_multithreaded(Mode::Plain, &Batch::from_blocks(blocks, 4096), out), the batch borrowed in place, each call after other work
-blake3-servil-mt ContinuousMessages: throughput::hash_multithreaded(Mode::Plain, blocks, len), one message after another, each read into a kept buffer of the program's in whole blocks and hashed before the next is read (above 64 KiB a Hasher fed 64 KiB pieces by update_multithreaded)
-blake3-servil-mt ContinuousBatches: throughput::hash_many_multithreaded(Mode::Plain, &Batch::from_blocks(blocks, 64), out), the batch borrowed in place, one batch after another, each read into a kept buffer of the program's and hashed before the next is read
+blake3-servil-mt ContinuousMessages: throughput::Pipeline kept per producer (1024 message slots, 16 rooms of 64 KiB); message, copy into rooms, commit, end; short messages share a room, each nonfinal commit of a long message fills a room; consume Hashed events at the message limit and drain every result before the sample ends
+blake3-servil-mt ContinuousBatches: throughput::Pipeline and owned Batch inputs and digest boxes kept per producer and batch size; about 1 MiB of input buffers, at least 2 and at most 1024; refill by one bulk copy, message, batch; consume each Batch event's digests before reusing its storage, drain every result before the sample ends
 blake3-servil-st ContinuousMessages: throughput::hash(Mode::Plain, blocks, len), one message after another, each read into a kept buffer of the program's in whole blocks and hashed on its thread (a Hasher fed 64 KiB pieces above 64 KiB)
 blake3-servil-st ContinuousBatches: throughput::hash_many(Mode::Plain, &Batch::from_blocks(blocks, 64), out), the batch borrowed in place, one batch after another, each read into a kept buffer of the program's and hashed on its thread
-blake3-servil-mt ContinuousCollection: throughput::hash_multithreaded(Mode::Plain, blocks, len), the collection's messages one after another, each read into a kept buffer of the program's in whole blocks and hashed before the next is read
+blake3-servil-mt ContinuousCollection: throughput::Pipeline, the same rooms and calls as ContinuousMessages, the collection's items in order, each copied once into rooms; consume every item's Hashed event before the sample ends
 blake3-servil-st ContinuousCollection: throughput::hash(Mode::Plain, blocks, len), the collection's messages one after another, each read into a kept buffer of the program's in whole blocks and hashed on its thread
 blake3-servil-st LentMessages: throughput::hash(Mode::Plain, blocks, len), one message after another, each read into a kept buffer in whole blocks and lent until the call returns
 blake3-servil-st Interleaved: a Hasher per open message, 256 messages open at once, the pieces arriving in turns of 64, each read into its own kept buffer; throughput::update_each per turn, then throughput::finalize_each for the messages that ended in it, each buffer lent until the calls return
