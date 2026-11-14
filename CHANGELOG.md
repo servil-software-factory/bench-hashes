@@ -1,5 +1,10 @@
 # Unreleased
 
+**Kept comparisons protect earlier records.** `check` and `regress` require
+`--keep` to name a new or empty directory. They stop before expensive work when
+it already holds files, preserving those records and keeping earlier samples
+out of a new probe. A probe also propagates a failed final comparison's status.
+
 **Checks distinguish runs from reused programs.** The second stage reports
 its 16 linked layouts per side and four runs of each. `regress` counts the
 distinct executable paths used, so a repeated argument list no longer reads

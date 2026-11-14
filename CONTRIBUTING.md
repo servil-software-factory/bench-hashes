@@ -75,6 +75,12 @@ build. `--cells all` measures every point, for a release or a change its
 author judges can act anywhere. A change to the library carries its
 probe's line in its pull request.
 
+Keep a check you will cite with `--keep DIR`. The directory must be new or empty
+and used only by that invocation; `check` and `regress` stop before expensive
+work when it already holds files. Keep driver logs beside it. A probe without
+`--keep` uses a disposable cache. A failed final probe comparison returns failure
+to its caller, while valid speed readings remain a survey without a gate verdict.
+
 ### When a check reads a cell slower
 
 There is no rule for this, on purpose (Zooko, November 12, 2026: goals,

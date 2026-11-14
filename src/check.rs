@@ -277,6 +277,9 @@ pub fn command(arguments: &[String]) -> i32 {
             <= 1,
         "--points, --probe or --cells all: one scope\n{usage}"
     );
+    if let Some(keep) = &keep {
+        crate::prepare_keep_dir(keep);
+    }
     // The machine first, before a build: a check on a busy machine measures
     // for an hour and abstains. --when-quiet waits for one instead.
     if when_quiet {
@@ -538,27 +541,7 @@ pub fn command(arguments: &[String]) -> i32 {
         // pairs and their ratio (compare), for the question "is this idea
         // worth building"; the verdict is the full check's, on the change
         // once built.
-        let keep = keep.as_ref().unwrap();
-        let mut runs: Vec<PathBuf> = std::fs::read_dir(keep)
-            .expect("the probe's kept runs")
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| {
-                p.file_name()
-                    .is_some_and(|n| n.to_string_lossy().starts_with("run-"))
-            })
-            .collect();
-        runs.sort();
-        let (olds, news): (Vec<_>, Vec<_>) = runs
-            .iter()
-            .partition(|p| p.to_string_lossy().ends_with("-old.tsv"));
-        let mut compare: Vec<String> = vec!["compare".into()];
-        compare.extend(olds.iter().map(|p| p.display().to_string()));
-        compare.push("--".into());
-        compare.extend(news.iter().map(|p| p.display().to_string()));
-        println!("check: the probe's cells over {} pairs (compare; no verdict: the full check's is the gate)", olds.len());
-        run_regress(&new_exe, &bench, &compare);
-        return 0;
+        return report_probe(&new_exe, &bench, keep.as_ref().unwrap());
     }
     let suspects: Vec<String> = out
         .lines()
@@ -621,6 +604,29 @@ pub fn command(arguments: &[String]) -> i32 {
     second.push("--".into());
     second.extend(news);
     run_regress(&new_exe, &bench, &second).0
+}
+
+/// Compare the accepted pairs in this probe's record directory.
+fn report_probe(exe: &Path, bench: &Path, keep: &Path) -> i32 {
+    let mut runs: Vec<PathBuf> = std::fs::read_dir(keep)
+        .expect("the probe's kept runs")
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with("run-"))
+        })
+        .collect();
+    runs.sort();
+    let (olds, news): (Vec<_>, Vec<_>) = runs
+        .iter()
+        .partition(|p| p.to_string_lossy().ends_with("-old.tsv"));
+    let mut compare: Vec<String> = vec!["compare".into()];
+    compare.extend(olds.iter().map(|p| p.display().to_string()));
+    compare.push("--".into());
+    compare.extend(news.iter().map(|p| p.display().to_string()));
+    println!("check: the probe's cells over {} pairs (compare; no verdict: the full check's is the gate)", olds.len());
+    run_regress(exe, bench, &compare).0
 }
 
 /// A scope's points, as its caller names them: comma-separated, each
@@ -1331,6 +1337,55 @@ mod tests {
             super::layouts_cost(64).as_deref(),
             Some("check: --layouts 64: 128 links before the first pair, about 18 s each; the default 4 choose the suspects, and the second stage gives them 64 pairs")
         );
+    }
+
+    #[test]
+    fn a_probe_compares_accepted_pairs_and_preserves_the_child_status() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("bench-probe-report-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let kept = dir.join("samples");
+        std::fs::create_dir_all(kept.join("retried")).unwrap();
+        for name in [
+            "run-001-old.tsv",
+            "run-002-new.tsv",
+            "run-003-new.tsv",
+            "run-004-old.tsv",
+            "run-005-old.tsv",
+            "run-006-new.tsv",
+            "sizes.tsv",
+            "retried/run-007-old.tsv",
+            "retried/run-008-new.tsv",
+        ] {
+            std::fs::write(kept.join(name), "fixed input").unwrap();
+        }
+        let exe = dir.join("compare-child");
+        let expected = [
+            "compare".to_owned(),
+            kept.join("run-001-old.tsv").display().to_string(),
+            kept.join("run-004-old.tsv").display().to_string(),
+            kept.join("run-005-old.tsv").display().to_string(),
+            "--".to_owned(),
+            kept.join("run-002-new.tsv").display().to_string(),
+            kept.join("run-003-new.tsv").display().to_string(),
+            kept.join("run-006-new.tsv").display().to_string(),
+        ]
+        .join("\n")
+            + "\n";
+        for code in [0, 7, 101] {
+            std::fs::write(
+                &exe,
+                format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > arguments.txt\nexit {code}\n"),
+            )
+            .unwrap();
+            std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o700)).unwrap();
+            assert_eq!(super::report_probe(&exe, &dir, &kept), code);
+            assert_eq!(
+                std::fs::read_to_string(dir.join("arguments.txt")).unwrap(),
+                expected
+            );
+        }
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     /// The patch points at the crate named blake3-servil: the checkout's

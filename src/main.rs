@@ -7362,6 +7362,21 @@ fn geometric_mean(values: impl Iterator<Item = u128>) -> u128 {
  */
 const REGRESS_ROUNDS: usize = 24;
 const REGRESS_PAIRS: usize = 8;
+/// This invocation owns a new or empty record directory. Check before setup:
+/// overwriting old run numbers loses evidence, and leftovers mix into probes.
+fn prepare_keep_dir(keep: &std::path::Path) {
+    fs::create_dir_all(keep)
+        .unwrap_or_else(|error| panic!("cannot create {}: {error}", keep.display()));
+    assert!(
+        fs::read_dir(keep)
+            .unwrap_or_else(|error| panic!("cannot read {}: {error}", keep.display()))
+            .next()
+            .is_none(),
+        "--keep {} must be new or empty; existing records are preserved",
+        keep.display()
+    );
+}
+
 /// Preserve abandoned attempts as diagnostics. Probe comparisons read only
 /// the accepted top-level pairs, while the full raw record stays available.
 fn keep_retried_pair(old: Option<&std::path::Path>, new: Option<&std::path::Path>) {
@@ -7758,6 +7773,9 @@ fn regress_command(arguments: &[String]) -> i32 {
         pairs >= 3,
         "--pairs: the rule needs at least three pairs\n{usage}"
     );
+    if let Some(keep) = &keep {
+        prepare_keep_dir(keep);
+    }
     // The machine first: a run on a busy machine abstains at its end; ten
     // quiet seconds now say so before it (check asks the same before its
     // build), tried for up to two minutes, since check's builds leave load
@@ -7767,10 +7785,6 @@ fn regress_command(arguments: &[String]) -> i32 {
             "regress: {reason}. No verdict (exit 2); run when nothing else runs on the machine."
         );
         return 2;
-    }
-    if let Some(keep) = &keep {
-        fs::create_dir_all(keep)
-            .unwrap_or_else(|error| panic!("cannot create {}: {error}", keep.display()));
     }
     assert!(
         points.is_none() || contenders.is_some(),
@@ -9341,6 +9355,45 @@ mod correctness_tests {
             format!("{SIZES_VERSION}\nsha256\t64 B\t40\nblake3-servil-mt\tcontinuous 64 B\t9\n");
         let new = format!("{SIZES_VERSION}\nsha256\t64 B\t44\nblake3-servil-mt\tcontinuous 64 B\t7\nblake3-servil-mt\tcontinuous batch 16\t3\n");
         assert_eq!(merge_sizes(&old, &new), format!("{SIZES_VERSION}\nsha256\t64 B\t40\nblake3-servil-mt\tcontinuous 64 B\t9\nblake3-servil-mt\tcontinuous batch 16\t3\n"));
+    }
+
+    #[test]
+    fn kept_results_require_a_new_or_empty_directory() {
+        let dir = std::env::temp_dir().join(format!("bench-keep-directory-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let kept = dir.join("new/records");
+        prepare_keep_dir(&kept);
+        assert!(kept.is_dir());
+        prepare_keep_dir(&kept);
+        let sample = kept.join("run-001-old.tsv");
+        fs::write(&sample, "earlier evidence").unwrap();
+        let refused = std::panic::catch_unwind(|| prepare_keep_dir(&kept));
+        assert_eq!(fs::read_to_string(&sample).unwrap(), "earlier evidence");
+        assert!(
+            refused.is_err(),
+            "reuse must stop before overwriting or mixing records"
+        );
+        // Both command boundaries stop here, before a checkout, build, clock
+        // or child process. This also checks that they share the precondition.
+        let commands: [fn(&[String]) -> i32; 2] = [crate::check::command, regress_command];
+        let args = ["--keep".to_owned(), kept.display().to_string()];
+        for command in commands {
+            let error = std::panic::catch_unwind(|| command(&args))
+                .expect_err("the occupied record directory must stop this command");
+            assert_eq!(
+                error.downcast_ref::<String>().unwrap(),
+                &format!(
+                    "--keep {} must be new or empty; existing records are preserved",
+                    kept.display()
+                )
+            );
+            assert_eq!(fs::read_to_string(&sample).unwrap(), "earlier evidence");
+        }
+        let file = dir.join("a-file");
+        fs::write(&file, "also preserved").unwrap();
+        assert!(std::panic::catch_unwind(|| prepare_keep_dir(&file)).is_err());
+        assert_eq!(fs::read_to_string(file).unwrap(), "also preserved");
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
