@@ -673,6 +673,8 @@ pub(super) fn details(
         "dependency lock",
         "build target",
         "files",
+        "power",
+        "load",
         "idle states",
         "shared placements",
         "effective idle states",
@@ -1308,6 +1310,8 @@ mod tests {
             ("source blake3-servil-st", source),
             ("git commit", "3333333333333333333333333333333333333333"),
             ("git clean status", "clean"),
+            ("power", "mains"),
+            ("load", "quiet"),
             ("bench-hashes source", "https://example.test/bench"),
             ("cpu type", "Apple example"),
             ("cpu count", "12"),
@@ -1324,6 +1328,14 @@ mod tests {
         let row = |label: &str| rows.iter().find(|(k, _, _)| k == label).unwrap();
         assert_eq!(row("BLAKE3-Servil").1, source);
         assert_eq!(row("BLAKE3-Servil").2, "");
+        assert_eq!(
+            rows.iter().filter(|(label, _, _)| label == "Power").count(),
+            1
+        );
+        assert_eq!(
+            rows.iter().filter(|(_, value, _)| value == "quiet").count(),
+            1
+        );
         assert_eq!(
             row("BLAKE3-Servil in bench-hashes").1,
             "0.9.0+2222222222222222222222222222222222222222"
