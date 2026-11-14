@@ -614,7 +614,14 @@ the same two builds, three fresh pairs over the points named (as
 verdict and no second stage. About three minutes with the builds cached,
 most of it the relinks. An idea gets its number from the same tool that
 later gates it, so the probe cannot drift from the gate; a change's pull
-request carries its probe's line.
+request carries its probe's line. A failed comparison returns a failing exit
+status, so an unreadable record cannot look like a completed probe.
+
+For records to retain, give `check` or `regress` **`--keep DIR`**, with a new or
+empty directory used only by that invocation. Both commands check its contents
+before building or measuring. Earlier records stay intact, and a probe's comparison
+contains only its own runs. Put driver logs beside the samples directory.
+Without `--keep`, a probe uses its disposable cache, replaced on its next run.
 
 Before it builds anything, `check` reads the machine for ten seconds and
 stops at once if other programs kept a CPU busy in any of them (the
