@@ -1,5 +1,12 @@
 # Unreleased
 
+**Versions and sources live in “About the hashes compared”.** The existing
+collapsed overview section groups the exact recorded identities and settings
+by machine and run, including file tools and earlier-library comparisons. The
+long version/commit line leaves the results headers. Opened records use readable
+contrast and wrap on phones. Full benchmark versions and recorded tool commands
+are retained. Measurements and statistical rules stay unchanged.
+
 **Expanded charts keep their headings readable.** Title, API link and legend
 flow together, with the plot below their measured height. Tick margins follow
 the actual label widths. Panels stay inside the viewport, and short screens

@@ -544,7 +544,7 @@ fn about(headers: &[(String, String)], load: &str) -> String {
 /// identity, the target features, the clock, the sizes...), and the samples
 /// file. The load windows alone stay in the file: "Other programs" sums
 /// them up.
-fn details(
+pub(super) fn details(
     headers: &[(String, String)],
     load: &str,
     power: &str,
@@ -610,11 +610,7 @@ fn details(
     // The repository the benchmark was built from, as its header records it.
     let bench = header(headers, "bench-hashes source");
     let bench = bench.strip_prefix("https://").unwrap_or(bench);
-    add(
-        "bench-hashes",
-        version.split('+').next().unwrap_or("").to_owned(),
-        String::new(),
-    );
+    add("bench-hashes", version.to_owned(), String::new());
     add(
         "bench-hashes commit",
         format!(
@@ -672,11 +668,7 @@ fn details(
         let (name, how) = v
             .split_once(": ")
             .expect("a contender line names its contender first");
-        add(
-            &format!("b3sum {name}"),
-            how.rsplit('/').next().unwrap_or(how).to_owned(),
-            String::new(),
-        );
+        add(&format!("b3sum {name}"), how.to_owned(), String::new());
     }
     // Every header line not shown above, under its own name.
     let shown = [

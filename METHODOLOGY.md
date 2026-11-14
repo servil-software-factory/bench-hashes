@@ -707,6 +707,16 @@ placement: after the pool's stream cells, Linux sometimes leaves the
 caller on an E core, which costs BLAKE3 st (AVX2 at half width there) and
 spares SHA-256 (as fast on either kind): bench #25.
 
+## The overview's run records
+
+The front page keeps machine metadata beside its results. **About the hashes
+compared**, collapsed by default, holds the recorded versions and sources, grouped
+by machine. Library, file-tool and earlier-library runs retain their own records.
+They include full benchmark versions, source commits, recorded tool commands,
+build/run settings and links to raw samples. The overview and map use the same
+header formatter. An earlier sample format links to its original map, whose
+renderer owns that record. The displayed identities come from the measured runs.
+
 ## The map
 
 `bench-hashes.map.html` draws every cell the run's samples file holds as

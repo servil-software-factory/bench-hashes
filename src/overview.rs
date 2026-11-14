@@ -192,6 +192,12 @@ fn ours<'a>(bars: &'a [Bar], pick: &Pick) -> Option<&'a Bar> {
         .or_else(|| bars.iter().find(|b| b.id == other_form(form).key()))
 }
 
+/// One recorded run behind a machine's comparisons.
+struct Record {
+    label: &'static str,
+    details: Vec<(String, String, String)>,
+}
+
 /// One machine's row.
 pub struct Row {
     pub machine: String,
@@ -207,6 +213,8 @@ pub struct Row {
     pub cells: Vec<Bars>,
     /// Warnings from each present run (library or files), shared with the map.
     pub load_notes: Vec<String>,
+    /// Exact recorded identities and settings, shown inside the hashes section.
+    records: Vec<Record>,
     /// Set where the run is of another release of the benchmark: its
     /// samples are not read (their rule is their own release's), the row
     /// names the machine and links its map, and says a run under this
@@ -489,6 +497,29 @@ pub fn row(directory: &Path, link: String) -> Row {
         })
         .collect();
     let mut row = described(&about.headers, link, cells, false);
+    row.records = [
+        ("Library run", "bench-hashes.samples.tsv", hashing.as_ref()),
+        ("File-tool run", "b3sum.samples.tsv", b3sum.as_ref()),
+        (
+            "Earlier library run",
+            "before/bench-hashes.samples.tsv",
+            before.as_ref(),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(label, samples, file)| {
+        let file = file?;
+        Some(Record {
+            label,
+            details: crate::map::details(
+                &file.headers,
+                &file.load,
+                &file.power,
+                &format!("{}/{samples}", row.link),
+            ),
+        })
+    })
+    .collect();
     row.load_notes = [("Library", hashing.as_ref()), ("Files", b3sum.as_ref())]
         .into_iter()
         .filter_map(|(label, file)| {
@@ -531,6 +562,7 @@ fn described(headers: &[(String, String)], link: String, cells: Vec<Bars>, stale
         link,
         cells,
         load_notes: Vec::new(),
+        records: Vec::new(),
         stale,
     }
 }
@@ -561,6 +593,51 @@ fn escape(text: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+/// The run records belong to the existing hashes disclosure. Each machine's
+/// library, file-tool and earlier-library records keep their own identities.
+fn records(rows: &[Row], order: &[usize]) -> String {
+    let mut out = String::from(
+        "<h3>Versions, sources and run settings</h3><p>Each run records its own versions and sources. Open a machine below for its contenders, build settings and raw samples.</p>",
+    );
+    for &i in order {
+        let row = &rows[i];
+        let _ = write!(
+            out,
+            "<details class=\"record\"><summary><b>{}</b> · {}, {} CPUs · {}</summary>",
+            escape(&row.machine),
+            escape(&row.os),
+            escape(&row.cpus),
+            escape(&row.day),
+        );
+        if row.stale {
+            let _ = write!(
+                out,
+                "<p>This earlier benchmark format keeps its <a href=\"{}/bench-hashes.map.html#run\">versions, sources and original run record</a> on its own map.</p>",
+                escape(&row.link),
+            );
+        }
+        for record in &row.records {
+            let _ = write!(
+                out,
+                "<section class=\"run-record\"><h4>{}</h4><dl>",
+                record.label
+            );
+            for (label, value, link) in &record.details {
+                let _ = write!(out, "<dt>{}</dt><dd>", escape(label));
+                if link.is_empty() {
+                    out.push_str(&escape(value));
+                } else {
+                    let _ = write!(out, "<a href=\"{}\">{}</a>", escape(link), escape(value));
+                }
+                out.push_str("</dd>");
+            }
+            out.push_str("</dl></section>");
+        }
+        out.push_str("</details>\n");
+    }
+    out
 }
 
 /// The grid as text, for the terminal and the tests: each cell's speeds,
@@ -1012,7 +1089,7 @@ pub fn html(rows: &[Row]) -> String {
         let others = rows.iter().filter(|r| family(r) == family(row)).count() - 1;
         let _ = write!(
             body,
-            "<th {}><a href=\"{}/bench-hashes.map.html\"><b>{}</b></a><span class=\"kind\">{}</span><span>{} CPUs, {} · {}</span><span><a class=\"run\" href=\"{}/bench-hashes.map.html#run\" title=\"the run's record: commits, compiler, power, load\">BLAKE3-Servil {} · bench-hashes {}</a></span>{load}{}{}</th>",
+            "<th {}><a href=\"{}/bench-hashes.map.html\"><b>{}</b></a><span class=\"kind\">{}</span><span>{} CPUs, {} · {}</span>{load}{}{}</th>",
             col(i),
             escape(&row.link),
             escape(&row.machine),
@@ -1020,10 +1097,11 @@ pub fn html(rows: &[Row]) -> String {
             escape(&row.cpus),
             escape(&row.os),
             escape(&row.day),
-            escape(&row.link),
-            escape(&row.fork),
-            escape(&row.version),
-            if row.stale { "<span class=\"stale\">that release's run is on its map; a run under this release is awaited</span>" } else { "" },
+            if row.stale {
+                "<span class=\"stale\">earlier benchmark: its results remain on its map; a current run is awaited</span>"
+            } else {
+                ""
+            },
             if others > 0 {
                 format!(
                     "<a class=\"swap\" href=\"#more\" data-f=\"{0}\">{others} other {0} machine{1} \u{25BE}</a>",
@@ -1132,6 +1210,7 @@ pub fn html(rows: &[Row]) -> String {
         .replace("@FAMILIES@", &families_by_machine(rows, &shown))
         .replace("@LEGEND@", &legend)
         .replace("@BODY@", &body)
+        .replace("@RECORDS@", &records(rows, &order))
 }
 
 /// The rows of the results directories under `results`, in the order they
@@ -1407,6 +1486,7 @@ mod tests {
             link: "benchmark-results/x".to_owned(),
             cells,
             load_notes: Vec::new(),
+            records: Vec::new(),
             stale: false,
         }
     }
@@ -1939,6 +2019,118 @@ mod tests {
         let row = super::row(&dir, "x".to_owned());
         assert!(!row.stale);
         assert_eq!(row.machine, "AMD Ryzen 7 9700X");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Each run carries its own identities, including file tools and the
+    /// earlier library. The overview never substitutes its renderer's build.
+    #[test]
+    fn provenance_keeps_the_library_file_and_earlier_records_separate() {
+        let dir =
+            std::env::temp_dir().join(format!("bench-overview-records-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("before")).unwrap();
+        let bench = "0.22.0+1111111111111111111111111111111111111111";
+        let source = |commit: &str| {
+            format!(
+                "blake3-servil (local checkout); source https://example.test/library; commit {commit}; clean"
+            )
+        };
+        let library = source("2222222222222222222222222222222222222222");
+        let earlier = source("3333333333333333333333333333333333333333");
+        let tool = "coreutils 9.9; source https://example.test/tools; flags <fast> & \"exact\"";
+        let command =
+            "/recorded/tools/b3sum --outboard /recorded/output (blake3 abcdef; b3sums 0.9.0)";
+        let fixture = |key: &str, value: &str, day: &str, cells: &str| {
+            format!(
+                "{SAMPLES_VERSION}\n# timestamp: {day}\n# cpu type: AMD Ryzen 7 9700X\n# cpu count: 16\n# os type: linux\n# bench-hashes version: {bench}\n# bench-hashes source: https://example.test/bench\n# git commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n# git clean status: clean\n# source {key}: {value}\n# load: quiet\n# power: mains power\n{}\n{cells}",
+                crate::SAMPLES_COLUMNS,
+            )
+        };
+        let cells = "blake3-servil-st\tsolo\tOneMessage\t64 B\tB\t80/64,80/64\t1,2\t-\t-\t-\t0,0\n";
+        for (path, key, value, day, cells) in [
+            (
+                "bench-hashes.samples.tsv",
+                "blake3-servil-st",
+                library.as_str(),
+                "2026-11-14 01:00:00 UTC",
+                cells,
+            ),
+            (
+                "b3sum.samples.tsv",
+                "sha256sum",
+                tool,
+                "2026-11-14 02:00:00 UTC",
+                "",
+            ),
+            (
+                "before/bench-hashes.samples.tsv",
+                "blake3-servil-st",
+                earlier.as_str(),
+                "2026-11-13 03:00:00 UTC",
+                cells,
+            ),
+        ] {
+            let mut text = fixture(key, value, day, cells);
+            if path == "b3sum.samples.tsv" {
+                text = text.replace(
+                    "# load: quiet",
+                    &format!("# contender: servil: {command}\n# load: quiet"),
+                );
+            }
+            std::fs::write(dir.join(path), text).unwrap();
+        }
+        let row = super::row(&dir, "benchmark-results/example".to_owned());
+        assert_eq!(row.records.len(), 3);
+        assert!(row.records[1]
+            .details
+            .iter()
+            .any(|(label, value, _)| label == "b3sum servil" && value == command));
+        for (record, label, source, path) in [
+            (
+                &row.records[0],
+                "Library run",
+                library.as_str(),
+                "bench-hashes.samples.tsv",
+            ),
+            (&row.records[1], "File-tool run", tool, "b3sum.samples.tsv"),
+            (
+                &row.records[2],
+                "Earlier library run",
+                earlier.as_str(),
+                "before/bench-hashes.samples.tsv",
+            ),
+        ] {
+            assert_eq!(record.label, label);
+            assert!(record.details.iter().any(|(_, text, _)| text == source));
+            assert!(record
+                .details
+                .iter()
+                .any(|(name, text, _)| name == "bench-hashes" && text == bench));
+            assert!(record
+                .details
+                .iter()
+                .any(|(name, _, link)| name == "Samples"
+                    && link == &format!("benchmark-results/example/{path}")));
+        }
+        let page = html(&[row]);
+        let (results, about) = page
+            .split_once("<details class=\"door\" id=\"hashes\">")
+            .unwrap();
+        assert!(
+            !results.contains(bench),
+            "the results stay free of the long version line"
+        );
+        assert!(about.starts_with("<summary>About the hashes compared</summary>"));
+        assert!(about.contains(bench));
+        assert!(about.contains(
+            "https://example.test/library/tree/2222222222222222222222222222222222222222"
+        ));
+        assert!(about.contains(
+            "https://example.test/library/tree/3333333333333333333333333333333333333333"
+        ));
+        assert!(about.contains("flags &lt;fast&gt; &amp; &quot;exact&quot;"));
+        assert!(!about.contains("flags <fast>"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
