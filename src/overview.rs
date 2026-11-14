@@ -455,19 +455,44 @@ pub fn row(directory: &Path, link: String) -> Row {
             == Some(SAMPLES_VERSION)
     };
     if !present.iter().any(|p| current(p)) {
-        let text = std::fs::read_to_string(present[0]).expect("a samples file");
-        let headers: Vec<(String, String)> = text
-            .lines()
-            .take_while(|l| l.starts_with('#'))
-            .filter_map(|l| l[1..].trim().split_once(": "))
-            .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        // Header strings already name the old machine. Show those records
+        // whole without interpreting the old format's measurement rows.
+        let recorded: Vec<_> = present
+            .iter()
+            .map(|path| {
+                let text = std::fs::read_to_string(path).expect("a samples file");
+                let headers: Vec<(String, String)> = text
+                    .lines()
+                    .take_while(|l| l.starts_with('#'))
+                    .filter_map(|l| l[1..].trim().split_once(": "))
+                    .map(|(k, v)| (k.to_owned(), v.to_owned()))
+                    .collect();
+                (path.file_name().unwrap().to_str().unwrap(), headers)
+            })
             .collect();
-        return described(
-            &headers,
+        let mut row = described(
+            &recorded[0].1,
             link,
             PICKS.iter().map(|_| Vec::new()).collect(),
             true,
         );
+        row.records = recorded
+            .iter()
+            .map(|(name, headers)| Record {
+                label: if *name == "bench-hashes.samples.tsv" {
+                    "Library run"
+                } else {
+                    "File-tool run"
+                },
+                details: crate::map::details(
+                    headers,
+                    header(headers, "load"),
+                    header(headers, "power"),
+                    &format!("{}/{name}", row.link),
+                ),
+            })
+            .collect();
+        return row;
     }
     let hashing = (hashing.exists() && current(&hashing))
         .then(|| read_samples(hashing.to_str().expect("a path in UTF-8")));
@@ -614,7 +639,7 @@ fn records(rows: &[Row], order: &[usize]) -> String {
         if row.stale {
             let _ = write!(
                 out,
-                "<p>This earlier benchmark format keeps its <a href=\"{}/bench-hashes.map.html#run\">versions, sources and original run record</a> on its own map.</p>",
+                "<p>These recorded headers describe an earlier benchmark format. Its measurements remain on its <a href=\"{}/bench-hashes.map.html\">original map</a>.</p>",
                 escape(&row.link),
             );
         }
@@ -1660,8 +1685,10 @@ mod tests {
         refresh(&copied[0]);
         let drawn = std::fs::read_to_string(site.join("index.html")).unwrap();
         assert!(
-            drawn.contains("a run under this release is awaited"),
-            "the other release's machine is named, not drawn"
+            drawn.contains(
+                "earlier benchmark: its results remain on its map; a current run is awaited"
+            ),
+            "the earlier machine's results keep their own renderer"
         );
         std::fs::remove_dir_all(&site).unwrap();
     }
@@ -1966,6 +1993,33 @@ mod tests {
             1,
             "the 64 B cell from this release's file"
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Older headers stay available while their measurement rows remain
+    /// outside this format's reader, even when those rows cannot be parsed here.
+    #[test]
+    fn earlier_records_show_headers_without_reading_their_samples() {
+        let dir =
+            std::env::temp_dir().join(format!("bench-overview-old-record-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let source = "blake3 1.0.0; crate archive SHA-256 old-fixed-source";
+        std::fs::write(
+            dir.join("bench-hashes.samples.tsv"),
+            format!("# bench-hashes samples v0\n# cpu type: Earlier machine\n# source blake3-official: {source}\nthese are not current-format measurement rows\n"),
+        ).unwrap();
+        let row = super::row(&dir, "benchmark-results/earlier".to_owned());
+        assert!(row.stale);
+        assert!(row.cells.iter().all(Vec::is_empty));
+        assert_eq!(row.records.len(), 1);
+        assert!(row.records[0]
+            .details
+            .iter()
+            .any(|(_, value, _)| value == source));
+        let page = html(&[row]);
+        assert!(page.contains(source));
+        assert!(page.contains("benchmark-results/earlier/bench-hashes.samples.tsv"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

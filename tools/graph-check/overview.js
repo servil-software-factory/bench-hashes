@@ -30,8 +30,10 @@ function contrast(a, b) {
 
 async function checkProvenance(page, tap = false) {
   const act = locator => tap ? locator.tap() : locator.click();
-  const door = page.locator('#hashes');
-  assert.equal(await door.count(), 1, 'the existing hashes section has one home');
+  const summary = page.getByText('About the hashes compared', { exact: true });
+  assert.equal(await summary.count(), 1, 'the familiar hashes section is discoverable by its name');
+  const door = summary.locator('..');
+  assert.equal(await door.evaluate(d => d.tagName), 'DETAILS', 'the existing section remains a disclosure');
   assert.equal(await door.locator(':scope > summary').textContent(), 'About the hashes compared');
   assert.equal(await door.evaluate(d => d.open), false, 'provenance starts collapsed');
   assert.equal(await door.locator('.run-record:visible').count(), 0, 'results readers see no expanded records');
@@ -44,6 +46,7 @@ async function checkProvenance(page, tap = false) {
     const machine = machines.nth(m);
     await act(machine.locator(':scope > summary'));
     const records = machine.locator('.run-record');
+    assert(await records.count() > 0, 'each machine exposes its recorded identities');
     for (let n = 0; n < await records.count(); n++) {
       const record = records.nth(n);
       const data = await record.evaluate(r => ({
@@ -75,9 +78,6 @@ async function checkProvenance(page, tap = false) {
       assert(contrast(style.color, style.background) >= 4.5, 'opened provenance has readable text contrast');
       assert(await record.evaluate(r => [...r.querySelectorAll('dd')].every(d => d.getBoundingClientRect().right <= document.documentElement.clientWidth + 1)), 'record values wrap inside the viewport');
       runs++;
-    }
-    if (!await records.count()) {
-      assert(await machine.getByRole('link', { name: 'versions, sources and original run record' }).count() === 1, 'earlier formats link to their own records');
     }
     await act(machine.locator(':scope > summary'));
   }

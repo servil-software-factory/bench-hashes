@@ -714,8 +714,9 @@ compared**, collapsed by default, holds the recorded versions and sources, group
 by machine. Library, file-tool and earlier-library runs retain their own records.
 They include full benchmark versions, source commits, recorded tool commands,
 build/run settings and links to raw samples. The overview and map use the same
-header formatter. An earlier sample format links to its original map, whose
-renderer owns that record. The displayed identities come from the measured runs.
+header formatter. Earlier formats also show their recorded header strings;
+their measurement rows stay with their original maps and readers. The displayed
+identities come from the measured runs.
 
 ## The map
 
