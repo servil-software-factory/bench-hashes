@@ -28,6 +28,14 @@ function contrast(a, b) {
   return (Math.max(x, y) + .05) / (Math.min(x, y) + .05);
 }
 
+async function checkRecordStyle(record) {
+  const style = await record.locator('dd').first().evaluate(d => ({
+    color: getComputedStyle(d).color, background: getComputedStyle(document.body).backgroundColor,
+  }));
+  assert(contrast(style.color, style.background) >= 4.5, 'opened provenance has readable text contrast');
+  assert(await record.evaluate(r => [...r.querySelectorAll('dd')].every(d => d.getBoundingClientRect().right <= document.documentElement.clientWidth + 1)), 'record values wrap inside the viewport');
+}
+
 async function checkProvenance(page, tap = false) {
   const act = locator => tap ? locator.tap() : locator.click();
   const summary = page.getByText('About the hashes compared', { exact: true });
@@ -62,21 +70,21 @@ async function checkProvenance(page, tap = false) {
       const value = key => raw.find(([k]) => k === key)?.[1];
       assert.equal(data.rows.find(r => r.label === 'bench-hashes')?.value, value('bench-hashes version'), 'the complete measured benchmark version is retained');
       assert.equal(data.rows.find(r => r.label === 'Measured')?.value, value('timestamp'), 'each run keeps its own date');
+      if (value('blake3-servil version')) assert.equal(data.rows.find(r => r.label === 'BLAKE3-Servil in bench-hashes')?.value, value('blake3-servil version'), 'the benchmark dependency keeps its own recorded version');
       const commit = data.rows.find(r => r.label === 'bench-hashes commit');
+      if (value('git clean status')) assert(commit?.value.includes('(' + value('git clean status') + ')'), 'the recorded tree state is explicit');
       assert(commit?.value.includes(value('git commit')), 'the benchmark commit is retained');
       assert(commit?.href.endsWith('/tree/' + value('git commit')), 'the commit link names that recorded build');
       const sources = raw.filter(([k]) => k.startsWith('source ') || k === 'contender');
       assert(sources.length > 0, 'the run records contender identities');
       for (const [key, original] of sources) {
         const expected = key === 'contender' ? original.slice(original.indexOf(': ') + 2) : original;
-        assert(data.rows.some(r => r.value === expected), `${data.kind}: preserves ${key}: ${original}`);
+        const at = data.rows.findIndex(r => r.value === expected);
+        assert(at >= 0, `${data.kind}: preserves ${key}: ${original}`);
+        assert(at < data.rows.findIndex(r => r.label === 'Machine'), 'contender identities precede machine details');
         identities++;
       }
-      const style = await record.locator('dd').first().evaluate(d => ({
-        color: getComputedStyle(d).color, background: getComputedStyle(document.body).backgroundColor,
-      }));
-      assert(contrast(style.color, style.background) >= 4.5, 'opened provenance has readable text contrast');
-      assert(await record.evaluate(r => [...r.querySelectorAll('dd')].every(d => d.getBoundingClientRect().right <= document.documentElement.clientWidth + 1)), 'record values wrap inside the viewport');
+      await checkRecordStyle(record);
       runs++;
     }
     await act(machine.locator(':scope > summary'));
@@ -91,6 +99,7 @@ async function main() {
   const [file, exe] = process.argv.slice(2);
   const url = /^https?:/.test(file) ? file : pathToFileURL(path.resolve(file)).href;
   const browser = await chromium.launch(exe ? { executablePath: exe, args: ['--no-sandbox'] } : {});
+  console.log({ playwright: require('playwright/package.json').version, chromium: browser.version() });
   try {
     for (const mobile of [false, true]) {
       const page = await browser.newPage({viewport: {width: mobile ? 390 : 1280, height: 900}, isMobile: mobile, hasTouch: mobile});
@@ -103,5 +112,5 @@ async function main() {
     }
   } finally { await browser.close(); }
 }
-module.exports = { checkProvenance };
+module.exports = { checkProvenance, checkRecordStyle };
 if (require.main === module) main().catch(e => { console.error(e); process.exitCode = 1; });

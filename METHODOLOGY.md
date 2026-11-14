@@ -712,6 +712,7 @@ spares SHA-256 (as fast on either kind): bench #25.
 The front page keeps machine metadata beside its results. **About the hashes
 compared**, collapsed by default, holds the recorded versions and sources, grouped
 by machine. Library, file-tool and earlier-library runs retain their own records.
+Software identities come first, followed by build settings and run conditions.
 They include full benchmark versions, source commits, recorded tool commands,
 build/run settings and links to raw samples. The overview and map use the same
 header formatter. Earlier formats also show their recorded header strings;

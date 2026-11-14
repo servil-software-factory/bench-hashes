@@ -5,7 +5,8 @@ an overview, on desktop and phone. Closed, it keeps long version/commit strings
 out of the results headers. Open, each machine exposes its separate library,
 file-tool and earlier-library records. The checker follows each samples link and
 compares the displayed identities, complete benchmark version and dates with the
-recorded header. It checks readable contrast and phone wrapping. Earlier formats
+recorded header. It checks software-first ordering, readable contrast and phone
+wrapping. Earlier formats
 show their headers too; their measurement rows stay with their own readers.
 
 ```sh

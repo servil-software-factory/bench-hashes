@@ -537,10 +537,10 @@ fn about(headers: &[(String, String)], load: &str) -> String {
 
 /// The run's provenance, behind its door, for the readers who want it:
 /// every line of the samples file's header (bench-hashes #103). The ones a
-/// reader asks about first come first, under plain labels: when and where
-/// it ran, the software at its exact commits (links to them), each
-/// contender's source as the run recorded it, the build, the power and the
-/// load; then every other header line under its own name (the CPU's
+/// reader seeks here come first: the software at its exact commits (links
+/// to them), each contender's recorded identity and the build settings.
+/// The machine, time, power and load follow; then every other header line
+/// under its own name (the CPU's
 /// identity, the target features, the clock, the sizes...), and the samples
 /// file. The load windows alone stay in the file: "Other programs" sums
 /// them up.
@@ -556,54 +556,6 @@ pub(super) fn details(
             out.push((label.to_owned(), text, link));
         }
     };
-    add(
-        "Measured",
-        header(headers, "timestamp").to_owned(),
-        String::new(),
-    );
-    let identity = header(headers, "cpu identity");
-    let cores = |level: &str| {
-        identity.split(" · ").find_map(|f| {
-            f.strip_prefix(&format!("hw.perflevel{level}.physicalcpu: "))
-                .map(str::to_owned)
-        })
-    };
-    let machine = match (cores("0"), cores("1")) {
-        (Some(p), Some(e)) => format!(
-            "{}, {p} performance and {e} efficiency cores, {}",
-            header(headers, "cpu type"),
-            header(headers, "os type")
-        ),
-        _ => format!(
-            "{}, {} CPUs, {}",
-            header(headers, "cpu type"),
-            header(headers, "cpu count"),
-            header(headers, "os type")
-        ),
-    };
-    add("Machine", machine, String::new());
-    add("Power", power.to_owned(), String::new());
-    add("Other programs", load.to_owned(), String::new());
-    add(
-        "Idle states",
-        header(headers, "idle states").to_owned(),
-        String::new(),
-    );
-    add(
-        "Effective idle states",
-        header(headers, "effective idle states").to_owned(),
-        String::new(),
-    );
-    add(
-        "Idle control",
-        header(headers, "idle control").to_owned(),
-        String::new(),
-    );
-    add(
-        "Shared placements",
-        header(headers, "shared placements").to_owned(),
-        String::new(),
-    );
     let version = header(headers, "bench-hashes version");
     let commit = header(headers, "git commit");
     let clean = header(headers, "git clean status");
@@ -612,10 +564,15 @@ pub(super) fn details(
     let bench = bench.strip_prefix("https://").unwrap_or(bench);
     add("bench-hashes", version.to_owned(), String::new());
     add(
+        "BLAKE3-Servil in bench-hashes",
+        header(headers, "blake3-servil version").to_owned(),
+        String::new(),
+    );
+    add(
         "bench-hashes commit",
         format!(
             "{bench} at {commit}{}",
-            if clean.is_empty() || clean == "clean" {
+            if clean.is_empty() {
                 String::new()
             } else {
                 format!(" ({clean})")
@@ -624,24 +581,20 @@ pub(super) fn details(
         format!("https://{bench}/tree/{commit}"),
     );
     let servil = servil_source(headers);
-    if let Some(at) = servil.split("; commit ").nth(1) {
-        let fork = at.split([';', ' ']).next().unwrap_or("");
-        // The repository the run's code came from, as its header records it:
-        // none where the checkout's origin is a local path (a clone of a
-        // clone), and then the row has no link. (An expect here once ended
-        // a run after it had measured, before its report and map.)
-        let repo = servil
-            .split("; source https://")
-            .nth(1)
-            .and_then(|r| r.split(';').next());
-        // Its source as the run recorded it (version, commit, clean status),
-        // linked to the commit where the repository is known.
-        add(
-            "BLAKE3-Servil",
-            servil.to_owned(),
-            repo.map_or(String::new(), |repo| format!("https://{repo}/tree/{fork}")),
-        );
-    }
+    let commit = servil
+        .split("; commit ")
+        .nth(1)
+        .and_then(|s| s.split([';', ' ']).next());
+    let repo = servil
+        .split("; source https://")
+        .nth(1)
+        .and_then(|s| s.split(';').next());
+    // Preserve the identity even when it names an archive or local origin.
+    // A web repository and a commit together also provide a source link.
+    let link = repo.zip(commit).map_or(String::new(), |(repo, commit)| {
+        format!("https://{repo}/tree/{commit}")
+    });
+    add("BLAKE3-Servil", servil.to_owned(), link);
     // Every other contender's source, as the run recorded it.
     for (k, v) in headers
         .iter()
@@ -654,6 +607,12 @@ pub(super) fn details(
             .map_or(key.to_owned(), |a| a.name().to_owned());
         add(&name, v.to_owned(), String::new());
     }
+    for (_, v) in headers.iter().filter(|(k, _)| k == "contender") {
+        let (name, how) = v
+            .split_once(": ")
+            .expect("a contender line names its contender first");
+        add(&format!("b3sum {name}"), how.to_owned(), String::new());
+    }
     for (label, key) in [
         ("Rust compiler", "rust compiler"),
         ("C compiler", "c compiler"),
@@ -661,14 +620,41 @@ pub(super) fn details(
         ("Dependencies", "dependency lock"),
         ("Target", "build target"),
         ("Files", "files"),
+        ("Measured", "timestamp"),
     ] {
         add(label, header(headers, key).to_owned(), String::new());
     }
-    for (_, v) in headers.iter().filter(|(k, _)| k == "contender") {
-        let (name, how) = v
-            .split_once(": ")
-            .expect("a contender line names its contender first");
-        add(&format!("b3sum {name}"), how.to_owned(), String::new());
+    let identity = header(headers, "cpu identity");
+    let cores = |level: &str| {
+        identity.split(" · ").find_map(|f| {
+            f.strip_prefix(&format!("hw.perflevel{level}.physicalcpu: "))
+                .map(str::to_owned)
+        })
+    };
+    let machine = match (cores("0"), cores("1")) {
+        (Some(p), Some(e)) => format!(
+            "{}, {} CPUs, {p} performance and {e} efficiency cores, {}",
+            header(headers, "cpu type"),
+            header(headers, "cpu count"),
+            header(headers, "os type"),
+        ),
+        _ => format!(
+            "{}, {} CPUs, {}",
+            header(headers, "cpu type"),
+            header(headers, "cpu count"),
+            header(headers, "os type")
+        ),
+    };
+    add("Machine", machine, String::new());
+    add("Power", power.to_owned(), String::new());
+    add("Other programs", load.to_owned(), String::new());
+    for (label, key) in [
+        ("Idle states", "idle states"),
+        ("Effective idle states", "effective idle states"),
+        ("Idle control", "idle control"),
+        ("Shared placements", "shared placements"),
+    ] {
+        add(label, header(headers, key).to_owned(), String::new());
     }
     // Every header line not shown above, under its own name.
     let shown = [
@@ -677,6 +663,7 @@ pub(super) fn details(
         "cpu count",
         "os type",
         "bench-hashes version",
+        "blake3-servil version",
         "bench-hashes source",
         "git commit",
         "git clean status",
@@ -1302,6 +1289,55 @@ mod tests {
             "an older record: its commit"
         );
         assert_eq!(super::run_name(&[bench]), "bench-hashes 0.21.0");
+    }
+
+    /// Software identities lead the record, including a source without a Git
+    /// commit. Complete build identity and both CPU counts stay visible.
+    #[test]
+    fn recorded_software_precedes_conditions_and_keeps_identity_fields() {
+        let source = "blake3-servil 0.9.0; crate archive SHA-256 fixed-archive";
+        let headers: Vec<_> = [
+            (
+                "bench-hashes version",
+                "0.22.0+1111111111111111111111111111111111111111",
+            ),
+            (
+                "blake3-servil version",
+                "0.9.0+2222222222222222222222222222222222222222",
+            ),
+            ("source blake3-servil-st", source),
+            ("git commit", "3333333333333333333333333333333333333333"),
+            ("git clean status", "clean"),
+            ("bench-hashes source", "https://example.test/bench"),
+            ("cpu type", "Apple example"),
+            ("cpu count", "12"),
+            ("os type", "darwin"),
+            (
+                "cpu identity",
+                "hw.perflevel0.physicalcpu: 2 · hw.perflevel1.physicalcpu: 4",
+            ),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect();
+        let rows = super::details(&headers, "quiet", "mains", "samples.tsv");
+        let row = |label: &str| rows.iter().find(|(k, _, _)| k == label).unwrap();
+        assert_eq!(row("BLAKE3-Servil").1, source);
+        assert_eq!(row("BLAKE3-Servil").2, "");
+        assert_eq!(
+            row("BLAKE3-Servil in bench-hashes").1,
+            "0.9.0+2222222222222222222222222222222222222222"
+        );
+        assert_eq!(
+            row("bench-hashes commit").1,
+            "example.test/bench at 3333333333333333333333333333333333333333 (clean)"
+        );
+        assert_eq!(
+            row("Machine").1,
+            "Apple example, 12 CPUs, 2 performance and 4 efficiency cores, darwin"
+        );
+        let position = |label: &str| rows.iter().position(|(k, _, _)| k == label).unwrap();
+        assert!(position("BLAKE3-Servil") < position("Other programs"));
     }
 
     /// The door's BLAKE3-Servil row: linked to its commit where the source
