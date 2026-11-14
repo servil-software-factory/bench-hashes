@@ -44,6 +44,7 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" != Linux ]; then exec cargo run --release -- --quick; fi
+          sudo apt-get update -qq
           sudo apt-get install -y -qq gdb > /dev/null
           ./target/release/bench-hashes --quick & pid=$!
           for i in $(seq 600); do if ! kill -0 $pid 2> /dev/null; then wait $pid; exit $?; fi; sleep 1; done
