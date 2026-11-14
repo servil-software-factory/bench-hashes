@@ -63,7 +63,12 @@ impl Messages {
     ) {
         let mut room: Option<Room> = None;
         let mut pending = 0;
-        for input in inputs {
+        for (index, input) in inputs.into_iter().enumerate() {
+            // EXPERIMENT ONLY: known additional work, identical useful output.
+            // One extra serial hash each sixteen messages; wall cost is measured.
+            if index % 16 == 0 {
+                black_box(blake3::hash(black_box(input)));
+            }
             if pending == self.capacity {
                 self.consume(&mut consume);
                 pending -= 1;
