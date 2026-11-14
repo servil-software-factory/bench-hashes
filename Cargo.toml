@@ -49,7 +49,7 @@ default-features = false
 # build-against updates its own lock for the patch first.
 [dependencies.blake3-servil]
 git = "https://github.com/servil-software-factory/BLAKE3"
-rev = "bf2da8b957f5e0c80babb57952de3e53f95c921a"
+rev = "f62bc6ac0bc1c86861659d61ffbf4e9546bc8aec"
 
 # The one place clocks are read (wall time, and the thread's counts per
 # core kind): part of this repository, so the bench's commit names it.
