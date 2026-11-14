@@ -40,7 +40,7 @@
 //!    (TO_CHECK_FOR_REGRESSIONS), judged all at once (clocks::summary).
 //! 4. When no cell is slower, runs the cells `regress` names as suspects
 //!    (level, the pairs' mean beyond the margin; at most 8) again on
-//!    SECOND_PAIRS fresh pairs (SECOND_LAYOUTS new links a side, each run
+//!    SECOND_PAIRS process pairs (SECOND_LAYOUTS new links a side, each run
 //!    SECOND_RUNS times), judged among
 //!    themselves: judged among every cell, a slowdown at one point is
 //!    level unless it is many times its pairs' spread (bench-hashes #66).
@@ -571,7 +571,7 @@ pub fn command(arguments: &[String]) -> i32 {
     // The second stage: the suspects on fresh layouts (seeds past both
     // sides' first ones), judged among themselves.
     eprintln!(
-        "check: a second stage for {} suspects on {SECOND_PAIRS} fresh pairs: {}",
+        "check: a second stage for {} suspects: {SECOND_LAYOUTS} new link layouts per side, {SECOND_RUNS} runs each ({SECOND_PAIRS} run pairs): {}",
         suspects.len(),
         suspects.join(", ")
     );

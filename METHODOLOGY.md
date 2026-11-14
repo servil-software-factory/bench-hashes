@@ -587,8 +587,8 @@ before any build. An explicit `--old-bench REV` compares benchmark versions even
 library trees are identical. Across two benchmark versions it compares the
 contenders the older one knows too, and names each one left out. With one benchmark for both sides, identical
 library trees need no measurement. It then builds the working tree and the target commit,
-relinks each side with fresh random function orders (each link run
-twice), and runs the named cells. The check records how many points it
+relinks each side with fresh random function orders and runs the named
+cells once per first-stage layout. The check records how many points it
 measured and how many it left unmeasured; choosing them is the author's
 judgment, from the summary and the change itself.
 
@@ -624,8 +624,8 @@ for a quiet machine instead, for a run queued for the night. `regress`
 asks the same before it measures.
 
 When the pairs find no cell slower, `check` takes a second stage. The
-cells `regress` names as suspects run again on 64 fresh pairs, 16 new
-links a side each run 4 times, and are judged among themselves. The
+cells `regress` names as suspects run again on 64 pairs of processes,
+using 16 new links a side, each run 4 times, and are judged among themselves. The
 suspects, at most 8, are of two kinds taken in turn, so each keeps
 places of its own (bench-hashes #166: 17 moved counts once took every
 place, and a cell 38% slower in every pair went unjudged). One kind is
@@ -641,11 +641,21 @@ no evidence). The other kind is the level cells whose
 wall-time mean lies beyond the margin, the strongest evidence of change
 first. Where the machine counts no instructions (a VM without a PMU, a
 Mac), the suspects are wall's alone and the run says so. Wall still
-decides, on the second stage's fresh pairs. Judged among every cell a
+decides, on the second stage's process pairs. Judged among every cell a
 change reaches, a slowdown at one point passes unseen unless it is many
 times its pairs' spread; among 8 cells on 64 pairs it shows once it
 reaches about a third of one pair's spread. The stage adds about eight
 minutes, most of it the relinks.
+
+**Run count and layout count are distinct.** The default second stage uses
+16 linked programs per side in 64 pairs of processes. Repeated executions
+retain those programs' layouts, so their results can be correlated. `check`
+names the link count and repeat count; `regress` counts the distinct executable
+paths actually used. Different paths can contain identical code, so the path
+count alone establishes no independence. Likewise, matching source revisions
+alone establish no unchanged-code control: build settings or runtime inputs
+such as the thread budget can differ. The reports state source identity
+without automatically naming that comparison A/A.
 
 **A comparison's workload context matters.** Selecting cells changes what
 runs around them. A full run and a selected-cell follow-up can therefore
@@ -662,11 +672,11 @@ records both effects and the remaining questions.
 | choice | evidence | what it gives up |
 |---|---|---|
 | A run's cell is its **mean**, total time over total work, every sample counted (`clocks::summary::mean`; Zooko, October 2 and 23) | Planted slowdowns on the Mac: at +6% a fast speed never caught 1 MiB, while the mean caught every cell nearly every time. At the check's budgets (6 and 24 samples per cell), setting the slowest sample aside erased a slow state occurring once in ten samples (`2026-10-22/mean-trim-controls`), whereas the untrimmed mean shows it in full. | A stall moves a cell's figure in full; a run whose load reading is busy carries no verdict. |
-| **Pairs of runs**, alternating, a **fresh link layout** on each side per pair (October 2 and 16) | Most uncertainty lies between processes (placement, the speed a cell settles into): one binary's run means varied 1.49 times what its samples predict; 12 samples or 24 gave the same between-run spread. A layout moves the cells of calls made now and then by several percent, fixed for every run of that binary, so alternation cannot cancel it: two links of one source gave 27 false verdicts in 700 cells. Seven A/A checks of the same links a side (i7-12700K, October 31; `2026-10-31/check-errors-i7`) found that share small there: their cells' ratios correlated 0.03 from check to check, so `check` runs each link twice (4 in its second stage). | A second side's runs and a relink per link. |
+| **Pairs of runs**, alternating, fresh link layouts with explicit repeats (October 2 and 16) | Most uncertainty lies between processes (placement, the speed a cell settles into): one binary's run means varied 1.49 times what its samples predict; 12 samples or 24 gave the same between-run spread. A layout moves the cells of calls made now and then by several percent, fixed for every run of that binary, so alternation cannot cancel it: two links of one source gave 27 false verdicts in 700 cells. Seven A/A checks of the same links a side (i7-12700K, October 31; `2026-10-31/check-errors-i7`) found that share small there: their cells' ratios correlated 0.03 from check to check. The current check runs each first-stage layout once and each second-stage layout four times. | A second side's runs and a relink per link. |
 | **Each pair on one core**, the pairs alternating core parity over the cache domains (John Servil, November 5; bench-hashes #69) | After the busy gap, odd cores of an EPYC 9255 fill a small call's L2 misses from DRAM where even ones use the L3 (`b069-oddeven`), so a run's core moved the small cells after other work 1.3-1.8x. An A/A on the EPYC (`b069-pinaa`: servil against itself, the check's own builds, 32 pairs a mode, pinned and unpinned in turn): the spread of the pairs' log ratios narrower pinned in every one of 22 cells, by x1.28-2.15 in the small cells after other work (median x1.47) and x2.4-2.6 in the idle 64 B cells; the pinned check over every cell found no cell slower. | Each pair measures one core; across the pairs, both parities and every cache domain. |
 | **4 pairs** by default (4 links a side, each run once; November 1, after 8 for a day bought nothing), each run with **the regression check's visits** (24 after a gap, 6 nonstop; October 20; nonstop 2 trains of 6 samples from 0.19, October 31, the safety checks below) | Calibrated on the i7-12700K (`data` branch `2026-10-20/check-validation`) and the M4 Max: on both, an A/A over every cell found no cell slower (the Mac at 8 pairs, 16 min; the i7 over 146 cells), and the two planted 6% slowdowns were caught at 4 pairs: `hash()`'s in servil st's cells (the Mac: +5% to +28% in the continuous cells, 11 min; the i7: 48 cells), the pool split's in servil mt's cells from 512 KiB, the cells after a gap among them (the Mac: +7% to +25%, 7 min; the i7: 22 of 28), in half the time of 8 pairs. At 12 visits after a gap instead of 24, the cells after a gap caught a plant 3 times in 10. Of the budget, pairs buy more than samples: 18 pairs of 4 samples judged 40% more narrowly than 8 of 12 in the same minutes. The first stage also chooses the second's suspects: among the 8 cells #119 slowed (+3% to +11% of 420), 4 pairs put one among the suspects in 6 checks of 11, 8 pairs in 52 of 55 resamplings of those checks. | A check takes 10 to 25 minutes, about 6 more than at 4 pairs. |
 | **All cells judged at once**: a paired t-test per cell on the log ratios, Benjamini-Hochberg at a 5% false discovery rate (Zooko, October 16) | A per-cell test over 700 cells flags 15-27 cells of unchanged code; a sign test cannot go stricter with few pairs. With the rule: 0 of 700 in three unchanged-code controls, and the code's real changes found. | Floating point inside the t-test. |
-| **A second stage** for the suspects, the strongest evidence first, 64 fresh pairs (16 links a side, each run 4 times), judged among themselves (Zooko, October 24; bench #66; October 31) | One input length planted slower in `hash()` (`data` branch, `2026-10-24/check-one-point` and `check-second-stage`): judged among 75 cells, +20% of calls (the cell +23% to +77% in every pair) was level. With the stage, +20% and +10% were caught, +6% not (cells after a gap swing 10-25% a pair); three A/A checks found no cell slower. A real slowdown, #119's +3% to +11% in 8 cold one-message cells (`2026-10-31/check-errors-i7`), passed 4 of 5 checks at 4 and 16 pairs, by ratio; with 8 pairs, suspects by evidence and 64 pairs, it was caught 3 of 3, and 3 A/A checks found no cell slower. | About eight minutes a check; one cell beside the planted ones judged slower at +10%. |
+| **A second stage** for the suspects, the strongest evidence first, 64 process pairs (16 links a side, each run 4 times), judged among themselves (Zooko, October 24; bench #66; October 31) | One input length planted slower in `hash()` (`data` branch, `2026-10-24/check-one-point` and `check-second-stage`): judged among 75 cells, +20% of calls (the cell +23% to +77% in every pair) was level. With the stage, +20% and +10% were caught, +6% not (cells after a gap swing 10-25% a pair); three A/A checks found no cell slower. A real slowdown, #119's +3% to +11% in 8 cold one-message cells (`2026-10-31/check-errors-i7`), passed 4 of 5 checks at 4 and 16 pairs, by ratio; with 8 pairs, suspects by evidence and 64 pairs, it was caught 3 of 3, and 3 A/A checks found no cell slower. | About eight minutes a check; one cell beside the planted ones judged slower at +10%. |
 | **A 3% margin** (October 2) | +3% planted was caught about half the time, +6% nearly always; one layout-only change in eight sat near 3% at lent 64 B. | Changes under 3% pass one commit at a time; the release check (`--against` the last release) sees their sum. |
 | **One calibration a side a check** (October 17) | Each run calibrating its own sizes cost 18 s of a 41-s run; shared sizes judged every group of cells more narrowly in less time (about 2.2 times the information per minute), and both sides do the same work a sample. | Sizes chosen on the old side's build. |
 | **Cells named by the change's author** (November 6) | The earlier rule chose cells from coverage: the lines each cell executes, from an instrumented build of each side. It read a change's unattributable line as able to act anywhere and measured every cell: three checks of November 5-6 spent 18 minutes on 426 cells for one declaration each, where the changes' own cells numbered about a dozen. The rule now prints the diff (files, lines, the items its hunks sit in) and its author names the cells, as `--probe` already did when it retired three library ideas in four minutes each that week; `--cells all` stays for releases and changes judged able to act anywhere. | A named scope can miss a cell the change moves; the check prints the count it left unmeasured, its author names the scope in the change's record, and a release measures every cell. |

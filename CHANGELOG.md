@@ -1,5 +1,12 @@
 # Unreleased
 
+**Checks distinguish runs from reused programs.** The second stage reports
+its 16 linked layouts per side and four runs of each. `regress` counts the
+distinct executable paths used, so a repeated argument list no longer reads
+as 64 new builds. Matching source revisions are reported as such, with build
+and run settings left explicit, instead of automatically calling the comparison
+A/A. Measurements and statistical decisions are unchanged.
+
 **Short incremental-hasher lifetimes are measured.** Six points cover
 64 B, 1 KiB and 4 KiB after other work and under sustained synchronous calls.
 Each operation creates a hasher, updates once, finalizes and consumes its
@@ -21,7 +28,7 @@ pin is `f62bc6ac0bc1c86861659d61ffbf4e9546bc8aec`.
 
 **`check --contenders` checks one form of BLAKE3-Servil.** `check --contenders blake3-servil-st` judges the single-threaded contender alone, which is the crate `blake3-servil-core`; the check says whose cells it left out.
 
-**A verdict says how far its pairs spread.** Each line `check` and `regress` print for a slower or faster cell now reads "+20.6% (the pairs' geometric mean; 64 pairs, from -27.0% to +194.6%: ...)". Every pair runs under a link layout of its own, so the spread shows how much layout and one run move that cell, beside the mean.
+**A verdict says how far its pairs spread.** Each line `check` and `regress` print for a slower or faster cell now reads "+20.6% (the pairs' geometric mean; 64 pairs, from -27.0% to +194.6%: ...)". The spread includes variation between linked layouts and between runs of each layout, beside the mean.
 
 **A map of this release beside the last.** `bench-hashes beside` draws a machine's map with BLAKE3-Servil as of the release before beside this one's, dashed, with a chip to hide it. The two versions come from a release check's paired runs, since one bench cannot build both; `--without` leaves out rows, columns, or one kind of contender, for a page of one crate's calls.
 
