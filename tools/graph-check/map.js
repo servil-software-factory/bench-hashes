@@ -29,6 +29,7 @@ async function main() {
     await page.waitForTimeout(260);
     assert.equal(await page.locator('.zoom').count(), 1, `chart ${i} opens`);
     assert.equal(await page.locator('.h.lit').count(), 2, `chart ${i}: its row and column light`);
+    await checkZoomLayout(page);
     const box = await page.locator('.zoom').boundingBox();
     // Inside the opened chart and the window both, clear of its title.
     await page.mouse.move(box.x + box.width / 2, Math.min(box.y + box.height / 2, Math.max(box.y + 60, 850)));
@@ -86,7 +87,8 @@ async function main() {
   await page.locator('.measures .switch').click();
   assert.equal(await solid(), wallOnly, 'cost view draws the same lines');
   await page.locator('.cell:not(.empty)').first().click(); await page.waitForTimeout(300);
-  assert(/ns per byte.*lower is better/.test(await page.locator('.zoom').innerHTML()), 'the cost axis names its unit and direction');
+  assert(/ns per byte/.test(await page.locator('.zoom').innerHTML()), 'the cost axis names its unit');
+  assert(/lower is better/.test(await page.locator('.measures .dir').textContent()), 'the persistent bar names the cost direction');
   await page.keyboard.press('Escape'); await page.waitForTimeout(300);
   await page.locator('.measures .switch').click();
   // A click outside an opened chart puts it back.
@@ -133,15 +135,19 @@ async function main() {
   await browser.close();
 }
 
-// A fresh touch-enabled map page. Leaves its first chart open for further checks.
-// This DOM-only contract is shared with historical maps' older data/legend forms.
+// A fresh touch-enabled page from the current renderer. Leaves its first chart open.
+// Historical renderer versions use their matching target checker.
 async function checkPhoneTargets(phone) {
   await phone.locator('.cell:not(.empty)').first().tap();
   await phone.waitForTimeout(300);
   assert.equal(await phone.locator('.zoom').count(), 1, 'a phone tap opens its chart');
   assert(await phone.locator('.zoom .title a.doc').evaluate(a => getComputedStyle(a).pointerEvents !== 'none'), 'the open chart keeps its documentation link active');
-  const zoom = await phone.locator('.zoom').boundingBox();
-  await phone.touchscreen.tap(zoom.x + zoom.width * 0.6, zoom.y + zoom.height * 0.5);
+  const plot = phone.locator('.zoom > svg');
+  await plot.scrollIntoViewIfNeeded();
+  const p = await plot.boundingBox(), frame = await phone.locator('.zoom').boundingBox(), view = phone.viewportSize();
+  const left = Math.max(p.x, frame.x), right = Math.min(p.x + p.width, frame.x + frame.width, view.width);
+  const top = Math.max(p.y, frame.y), bottom = Math.min(p.y + p.height, frame.y + frame.height, view.height);
+  await phone.touchscreen.tap(left + (right - left) * 0.6, (top + bottom) / 2);
   await phone.waitForTimeout(150);
   assert.equal(await phone.locator('.zoom').count(), 1, 'a tap on an open chart keeps it open');
   assert(await phone.locator('#tip').isVisible(), 'a tap shows the values at its point');
@@ -159,5 +165,38 @@ async function checkPhoneTargets(phone) {
   assert.equal(await phone.locator('.zoom').count(), 1, 'a tap on the small call name opens its chart');
 }
 
-module.exports = { checkPhoneTargets };
+// The current expanded-chart contract: content flows, labels fit, and close stays reachable.
+async function checkZoomLayout(page) {
+  const problems = await page.evaluate(view => {
+    const z = document.querySelector('.zoom'), svg = z.querySelector(':scope > svg');
+    z.scrollTop = 0;
+    const rect = element => element.getBoundingClientRect();
+    const frame = rect(z), title = rect(z.querySelector('.title')), key = rect(z.querySelector('.key')), plot = rect(svg);
+    const failures = [];
+    if (title.bottom > key.top + 0.5) failures.push('title overlaps legend');
+    if (frame.left < 0 || frame.top < 0 || frame.right > view.width + 0.5 || frame.bottom > view.height + 0.5) failures.push('panel leaves viewport: '+JSON.stringify({frame:{left:frame.left,right:frame.right,top:frame.top,bottom:frame.bottom},view,inner:{width:innerWidth,height:innerHeight},client:{width:document.documentElement.clientWidth,height:document.documentElement.clientHeight}}));
+    const plotTop = plot.top + Number(svg.querySelector('.cursor').getAttribute('y1')) * plot.height / Number(svg.getAttribute('height'));
+    if (Math.max(title.bottom, key.bottom) > plotTop) failures.push('heading overlaps plot');
+    const clipped = [...svg.querySelectorAll('text')].filter(text => {
+      const r = rect(text);
+      return r.left < plot.left - 0.5 || r.right > plot.right + 0.5 || r.top < plot.top - 0.5 || r.bottom > plot.bottom + 0.5;
+    });
+    if (clipped.length) failures.push('plot clips text: '+clipped.map(t => t.textContent).join('; '));
+    const doc = z.querySelector('.title a.doc'), d = doc.getClientRects()[0];
+    const hit = document.elementFromPoint((d.left + Math.min(d.right, view.width))/2, (d.top+d.bottom)/2);
+    if (!hit || !(hit===doc || doc.contains(hit))) failures.push('documentation link is covered');
+    const colon = OPEN.indexOf(':'), q = SECTIONS[Number(OPEN.slice(0,colon))].cells[OPEN.slice(colon+1)];
+    const expectedAxis = q.axis;
+    if (![...svg.querySelectorAll('text')].some(t => t.textContent===expectedAxis)) failures.push('axis label disagrees with its positions');
+    z.scrollTop = z.scrollHeight;
+    const close = z.querySelector('.close'), b = rect(close);
+    const closeHit = document.elementFromPoint((b.left+b.right)/2,(b.top+b.bottom)/2);
+    if (b.top < frame.top || b.bottom > frame.bottom || !closeHit || !(closeHit===close || close.contains(closeHit))) failures.push('close leaves the scroll viewport: '+JSON.stringify({frame:{top:frame.top,bottom:frame.bottom},button:{top:b.top,bottom:b.bottom},hit:closeHit?.className,scroll:z.scrollTop}));
+    z.scrollTop = 0;
+    return failures;
+  }, page.viewportSize());
+  assert.deepEqual(problems, [], `expanded chart layout (${await page.evaluate(() => OPEN)}): ${problems.join('; ')}`);
+}
+
+module.exports = { checkPhoneTargets, checkZoomLayout };
 if (require.main === module) main().catch(e => { console.error(e); process.exit(1); });

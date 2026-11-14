@@ -1,5 +1,12 @@
 # Unreleased
 
+**Expanded charts keep their headings readable.** Title, API link and legend
+flow together, with the plot below their measured height. Tick margins follow
+the actual label widths. Panels stay inside the viewport, and short screens
+scroll while keeping the close button reachable. Charts open and close directly.
+The bar names the vertical log scale; horizontal positions keep their existing
+input order. Measured values stay unchanged.
+
 **Published maps open on a phone.** Stored maps now carry the phone-tap repair:
 tapping a small chart opens it, and the enlarged chart keeps its documentation
 link active. Historical samples, values, provenance and call labels stay unchanged.
