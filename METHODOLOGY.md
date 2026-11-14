@@ -710,8 +710,9 @@ spares SHA-256 (as fast on either kind): bench #25.
 ## The map
 
 `bench-hashes.map.html` draws every cell the run's samples file holds as
-a small chart, its lines through each contender's means on log scales,
-higher faster. The charts sit in a grid, first for one program (solo)
+a small chart, its lines through each contender's means on a vertical log scale,
+higher faster. Horizontal positions follow the ordered list of tested inputs;
+their spacing expresses that order. The charts sit in a grid, first for one program (solo)
 and then, for the multithreaded contenders, two at once (shared), a
 layer per placement the machine has. Its rows are what the program hashes: one message, a
 batch of short messages, a batch of longer ones, a Merkle tree, many
@@ -721,7 +722,10 @@ fragments with the arrival waits included. A cell the run did not measure stays
 empty, in its place. Clicking a chart opens it over the cells, its row's
 and column's headers lit, with its axes and, under the pointer, each
 contender's rate and time per message (or batch, or run) at that point;
-clicking again, or Escape, puts it back. A row's or column's name shows
+clicking its plot again, or Escape, puts it back. The expanded title, API link
+and legend flow above the plot, whose available height follows that heading.
+Tick-label widths set its left margin. The panel stays within the viewport;
+short views scroll its contents while the close button stays reachable. A row's or column's name shows
 what it means while the pointer rests on it, or after a click or tap, and
 a hash's name in the legend hides or shows its lines in every chart.
 Each chart names the call BLAKE3-Servil mt makes there, a link to that
