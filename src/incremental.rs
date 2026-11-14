@@ -30,8 +30,12 @@ pub(crate) fn hash(algorithm: Algorithm, pieces: Pieces, mut consume: impl FnMut
             let mut h = blake3_servil::convenience::Hasher::new(blake3_servil::Mode::Plain, None);
             pieces(&mut |p| {
                 if algorithm == Algorithm::Blake3ServilSt {
+                    #[cfg(test)]
+                    crate::observe_call("update");
                     h.update(p);
                 } else {
+                    #[cfg(test)]
+                    crate::observe_call("update_multithreaded");
                     blake3_servil::throughput::update_multithreaded(&mut h, p);
                 }
             });
@@ -211,6 +215,11 @@ mod tests {
             .into_iter()
             .filter(|a| a.availability().is_ok())
         {
+            let lifetime = match algorithm {
+                Algorithm::Blake3ServilSt => vec![algorithm.key(), "update"],
+                Algorithm::Blake3ServilMt => vec![algorithm.key(), "update_multithreaded"],
+                _ => vec![algorithm.key()],
+            };
             crate::CALLS.with(|c| c.borrow_mut().clear());
             let point = Point {
                 use_case: UseCase::IncrementalMessage,
@@ -219,7 +228,7 @@ mod tests {
             crate::take_sample(algorithm, &input, point, 2);
             assert_eq!(
                 crate::CALLS.with(|c| c.borrow().clone()),
-                vec![algorithm.key(); 3],
+                lifetime.repeat(3),
                 "one untimed warm-up and two complete lifetimes"
             );
             crate::CALLS.with(|c| c.borrow_mut().clear());
@@ -232,7 +241,7 @@ mod tests {
             assert_eq!(seen, 5);
             assert_eq!(
                 crate::CALLS.with(|c| c.borrow().clone()),
-                vec![algorithm.key(); 5]
+                lifetime.repeat(5)
             );
         }
     }
