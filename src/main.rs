@@ -2792,8 +2792,8 @@ fn file_provenance(file: &SamplesFile) -> String {
 }
 
 /// Each side's builds, as `compare` and `regress` print them (`tool: old
-/// side: ...`), and a line saying so where both sides are one build: the
-/// comparison is then an A/A, whether or not it was meant as one.
+/// side: ...`). Matching source labels alone leave compilation and run
+/// settings unspecified, so report that fact without declaring an A/A.
 fn print_sides(tool: &str, old: &[String], new: &[String]) {
     print!("{}", sides(tool, old, new));
 }
@@ -2805,7 +2805,9 @@ fn sides(tool: &str, old: &[String], new: &[String]) -> String {
         new.join(" | ")
     );
     if old == new {
-        text += &format!("{tool}: both sides are one build: an A/A comparison\n");
+        text += &format!(
+            "{tool}: both sides report the same sources; build and run settings may differ\n"
+        );
     }
     text
 }
@@ -7374,6 +7376,15 @@ fn keep_retried_pair(old: Option<&std::path::Path>, new: Option<&std::path::Path
 /// How many times a pair runs again when one of its runs is no evidence.
 const REGRESS_REPEATS: usize = 3;
 
+/// Distinct invocation paths used by round-robin runs. A repeated list or
+/// repeated execution adds runs, while retaining the same program paths.
+fn executable_paths_used(exes: &[String], runs: usize) -> usize {
+    exes.iter()
+        .take(runs.min(exes.len()))
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
+}
+
 /// The margin a solo cell's verdict uses.
 const REGRESS_MARGIN_PERMILLE: u64 = 30;
 /// The most level cells a regression run names as suspects for a second
@@ -7796,9 +7807,9 @@ fn regress_command(arguments: &[String]) -> i32 {
         }
     }
     eprintln!(
-        "regress: {} new builds against {} old, {pairs} pairs over {}{}",
-        new_exes.len(),
-        old_exes.len(),
+        "regress: {pairs} run pairs using {} distinct new executable paths and {} old, over {}{}",
+        executable_paths_used(new_exes, pairs),
+        executable_paths_used(old_exes, pairs),
         scope.describe(),
         chosen_rounds.map_or(String::new(), |k| format!(", {k} rounds a run"))
     );
@@ -9249,8 +9260,8 @@ mod correctness_tests {
 
     /// This build's own status: `clean`, or a fingerprint (above) that
     /// decodes to 32 bytes.
-    /// A build's line names both commits and both trees' states, and the
-    /// A/A line appears exactly where the two sides' builds are one.
+    /// A source line names both commits and both trees' states. Matching
+    /// labels leave build and run settings to their recorded provenance.
     #[test]
     fn each_side_names_its_builds() {
         let (bench, servil) = (
@@ -9272,7 +9283,17 @@ mod correctness_tests {
             "bench 1c1958de1234 clean; no servil"
         );
         let one = sides("compare", &[clean.clone()], &[clean.clone()]);
-        assert!(one.ends_with("compare: both sides are one build: an A/A comparison\n"));
+        assert!(one.ends_with(
+            "compare: both sides report the same sources; build and run settings may differ\n"
+        ));
+        let multiple = sides(
+            "compare",
+            &[clean.clone(), dirty.clone()],
+            &[clean.clone(), dirty.clone()],
+        );
+        assert!(multiple.ends_with(
+            "compare: both sides report the same sources; build and run settings may differ\n"
+        ));
         let two = sides("compare", &[clean.clone()], &[dirty.clone()]);
         assert_eq!(
             two,
@@ -9391,6 +9412,24 @@ mod correctness_tests {
         );
         assert_eq!(Mean::of(&samples).fixed().0, 10_990u128 << 64);
         assert_eq!(Mean::of(&samples).format_ns(1), "10990.000");
+    }
+
+    #[test]
+    fn repeated_runs_and_repeated_arguments_keep_their_path_count() {
+        let paths: Vec<String> = (0..16).map(|i| format!("program-{i}")).collect();
+        let repeated: Vec<String> = paths.iter().cycle().take(64).cloned().collect();
+        assert_eq!(executable_paths_used(&repeated, 64), 16);
+        assert_eq!(executable_paths_used(&paths, 64), 16);
+        assert_eq!(
+            executable_paths_used(&paths, 3),
+            3,
+            "unused arguments stay out"
+        );
+        assert_eq!(
+            executable_paths_used(&["a".into(), "a".into(), "b".into()], 2),
+            1
+        );
+        assert_eq!(executable_paths_used(&[], 0), 0);
     }
 
     #[test]

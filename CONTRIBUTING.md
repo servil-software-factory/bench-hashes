@@ -174,8 +174,8 @@ names the BLAKE3-Servil checkout's commit and whether its tree was clean.
 builds, as `bench-hashes provenance` prints them: each checkout's commit
 and its tree's state (`clean`, or a dirty tree's sigil). So a path kept
 from an earlier build runs what it names. `regress` and `compare` print
-each side's builds the same way, and say so when both sides are one
-build. BLAKE3-Servil's `CONTRIBUTING.md` covers the
+each side's source revisions and tree states. Matching source labels still
+permit different build settings or run parameters. BLAKE3-Servil's `CONTRIBUTING.md` covers the
 fork's own tests and its performance-regression check, which runs this
 benchmark.
 
