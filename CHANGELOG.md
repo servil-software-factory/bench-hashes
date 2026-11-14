@@ -1,5 +1,9 @@
 # Unreleased
 
+**Published maps open on a phone.** Stored maps now carry the phone-tap repair:
+tapping a small chart opens it, and the enlarged chart keeps its documentation
+link active. Historical samples, values, provenance and call labels stay unchanged.
+
 **The same-code shortcut retains ordinary data changes.** It previously erased
 words beside a `.rs` filename as presumed panic locations and excluded every
 ELF note. Ordinary configuration can have that shape or live in a note, letting
