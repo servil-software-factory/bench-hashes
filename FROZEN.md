@@ -31,6 +31,31 @@ documents that explain the benchmark (README, METHODOLOGY, CONTRIBUTING,
 the notes) may still change, to say it better.
 
 **Changes for the next release** (Devon Jonte, November 14, 2026):
+- **Comparison records and early decisions**
+  ([reporting](https://github.com/servil-software-factory/bench-hashes/pull/216),
+  [saved runs](https://github.com/servil-software-factory/bench-hashes/pull/218),
+  [same-code check](https://github.com/servil-software-factory/bench-hashes/pull/220)).
+  An expanded second stage reports 16 layouts per side, four runs each,
+  and 64 run pairs. Matching sources remain distinct from matching
+  build/runtime settings.
+  An explicit kept-results directory must be new or empty, so later commands
+  preserve earlier runs. A failed probe comparison returns its failure.
+  Executable comparison retains ordinary configuration records and allocated
+  application notes; declared provenance and GNU build-ID exceptions remain.
+  This avoids skipping measurements of meaningful changes at the cost of
+  measuring some line-only or note changes. Timed calls and statistical
+  rules stay unchanged.
+- **Readable maps and reachable touch targets**
+  ([phone targets](https://github.com/servil-software-factory/bench-hashes/pull/222),
+  [expanded layout](https://github.com/servil-software-factory/bench-hashes/pull/223)).
+  On touch screens, collapsed labels allow a tap to reach their chart.
+  Expanded headings flow above the plot, measured labels set margins, and short panels scroll
+  while keeping their close control reachable. Charts open and close directly;
+  animation and transient-size machinery are removed. The scale label names
+  the logarithmic vertical axis; horizontal positions retain tested-input order.
+  Exact presentation patches update compatible published maps while preserving
+  their measured payloads and provenance. Older renderer contracts keep their
+  own checks. These repairs collect no new performance measurements.
 - **Short incremental-hasher lifetimes**
   ([coverage](https://github.com/servil-software-factory/bench-hashes/issues/209)).
   Six points measure 64 B, 1 KiB and 4 KiB through a fresh incremental

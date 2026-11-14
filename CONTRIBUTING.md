@@ -1,7 +1,7 @@
 # Working on bench-hashes
 
-This file holds what you need to change bench-hashes, or the BLAKE3 fork
-it measures, and keep your results comparable with ours.
+This file holds what you need to change bench-hashes, or BLAKE3-Servil,
+and keep your results comparable with ours.
 [METHODOLOGY.md](METHODOLOGY.md) explains the measurement design.
 
 ## Layout
@@ -182,7 +182,7 @@ and its tree's state (`clean`, or a dirty tree's sigil). So a path kept
 from an earlier build runs what it names. `regress` and `compare` print
 each side's source revisions and tree states. Matching source labels still
 permit different build settings or run parameters. BLAKE3-Servil's `CONTRIBUTING.md` covers the
-fork's own tests and its performance-regression check, which runs this
+library's own tests and its performance-regression check, which runs this
 benchmark.
 
 To move the pin of BLAKE3-Servil, set its `rev` in `Cargo.toml` to the full commit
@@ -200,7 +200,7 @@ to `clocks/` is a change to this repository, its tests among the ones
   batch as `for m in batch { hash(m) }`.
 - **What the benchmark asks of BLAKE3-Servil is frozen.** `FROZEN.md` lists
   each use case's calls and call pattern, and a test compares it with the
-  code; changing it is Zooko's decision, recorded there.
+  code. Changes follow that file's decision rules and are recorded there.
 - **The benchmark checks no digests.** Each crate's own tests establish
   that it is correct; the benchmark only keeps every digest from being
   optimized away (`black_box`).
