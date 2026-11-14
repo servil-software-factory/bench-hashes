@@ -5,12 +5,13 @@ body { font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Aria
 h1 { font-size: 20px; margin: 0 0 4px; } h2 { font-size: 17px; margin: 34px 0 6px; }
 .sub { color: #6b7280; margin: 0 0 14px; max-width: 980px; }
 .about { color: #6b7280; font-size: 12px; margin: 0 0 2px; }
-.run { color: #9ca3af; font-size: 12px; margin: 0 0 8px; }
-.run summary { cursor: pointer; width: max-content; }
-.run dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 6px 0 4px 14px; max-width: 980px; }
-.run dt { color: #6b7280; }
+.run { color: #374151; font-size: 14px; line-height: 1.45; margin: 0 0 8px; }
+.run summary { cursor: pointer; width: fit-content; max-width: 100%; color: #6b7280; font-size: 12px; }
+.run dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 8px 0 12px 14px; max-width: 980px; }
+.run dt { color: #4b5563; }
 .run dd { margin: 0; overflow-wrap: anywhere; }
-.run a { color: inherit; }
+.run a { color: #4c1d95; }
+@media (max-width: 600px) { .run dl { grid-template-columns: minmax(0, 1fr); gap: 2px; } .run dd { margin-bottom: 8px; } }
 .legend { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 6px; }
 .legend button { font: 12px inherit; border: 1px solid #d1d5db; background: #fff; border-radius: 12px; padding: 3px 10px 3px 8px; cursor: pointer; }
 .legend button::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; background: var(--c); vertical-align: -1px; }
