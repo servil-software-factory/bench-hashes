@@ -1,4 +1,23 @@
-# Checking the map's script
+# Checking the benchmark pages
+
+`overview.js` follows the existing **About the hashes compared** section on
+an overview, on desktop and phone. Closed, it keeps long version/commit strings
+out of the results headers. Open, each machine exposes its separate library,
+file-tool and earlier-library records. The checker follows each samples link and
+compares the displayed identities, complete benchmark version and dates with the
+recorded header. It checks software-first ordering, readable contrast and phone
+wrapping. Earlier formats
+show their headers too; their measurement rows stay with their own readers.
+
+```sh
+node tools/graph-check/overview.js index.html /usr/bin/chromium
+node tools/graph-check/overview.js https://servil-software-factory.github.io/bench-hashes/ /usr/bin/chromium
+```
+
+`checkProvenance(page, tap)`, exported by that script, takes a freshly loaded
+current overview and returns the number of machines, runs and identities checked.
+
+## The map
 
 `map.js` drives a generated `bench-hashes.map.html` in Chromium: every chart
 opens in place and closes, with its headers lit and the values under the

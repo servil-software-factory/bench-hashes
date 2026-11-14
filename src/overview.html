@@ -21,7 +21,7 @@ table { border-collapse: collapse; }
 th, td { text-align: left; vertical-align: middle; padding: 5px 10px; border-top: 1px solid #e5e7eb; }
 th { border-top: none; vertical-align: bottom; } th.stale { max-width: 180px; }
 th a { color: #4c1d95; text-decoration: none; } th b { font-size: 15px; } th span { display: block; color: #9ca3af; font-size: 12px; font-weight: normal; margin-top: 2px; }
-th span.stale { color: #6b7280; } th a.run { color: inherit; } th a.run:hover { text-decoration: underline; }
+th span.stale { color: #6b7280; }
 th.situation, td.situation { min-width: 150px; max-width: 170px; font-size: 12px; font-weight: 600; color: #6b7280; cursor: help; }
 /* On a narrow screen the grid scrolls sideways to its other machines; the
    row's name stays in view, so every bar says what it measures. */
@@ -79,7 +79,18 @@ th a.swap:hover { background: #ede9fe; }
 #tip .sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
 #tip .cmp { font-weight: 600; }
 footer { color: #9ca3af; font-size: 12px; margin-top: 24px; max-width: 980px; }
-.door { color: #6b7280; font-size: 12px; margin-top: 16px; max-width: 980px; } .door summary { cursor: pointer; width: max-content; } .door p { margin: 6px 0 0 14px; }
+.door { color: #374151; font-size: 14px; line-height: 1.45; margin-top: 16px; max-width: 980px; }
+.door > summary { color: #4b5563; font-size: 13px; }
+.door summary { cursor: pointer; width: fit-content; max-width: 100%; }
+.door p { margin: 8px 0; }
+.door h3 { font-size: 15px; margin: 18px 0 6px; }
+.record { border-top: 1px solid #e5e7eb; padding: 8px 0; }
+.record h4 { font-size: 14px; margin: 16px 0 6px; }
+.record dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 0 0 16px; }
+.record dt { color: #4b5563; }
+.record dd { margin: 0; overflow-wrap: anywhere; }
+.record a { color: #4c1d95; }
+@media (max-width: 600px) { .record dl { grid-template-columns: minmax(0, 1fr); gap: 2px; } .record dd { margin-bottom: 8px; } }
 h2 { font-size: 17px; font-weight: 600; color: #111827; margin: 22px 0 6px; }
 .families { max-width: 980px; margin: 8px 0 8px; }
 .fam-legend { display: flex; gap: 18px; color: #6b7280; font-size: 12px; margin-top: 14px; } .fam-legend i { display: inline-block; width: 22px; height: 10px; border-radius: 0 3px 3px 0; background: #6b7280; vertical-align: -1px; margin-right: 5px; } .fam-legend i.hi { opacity: .4; }
@@ -129,7 +140,7 @@ h2 { font-size: 17px; font-weight: 600; color: #111827; margin: 22px 0 6px; }
 @BODY@
 
 <div id="tip"></div>
-<details class="door"><summary>About the hashes compared</summary><p>BLAKE3 official is the <code>blake3</code> crate, the official implementation; BLAKE3-Servil is this fork of it. SHA-256 is the fastest implementation measured on each machine (the <code>sha2</code> crate, <code>ring</code>, or the operating system's CommonCrypto); the tooltip names which. <b>sha1sum and md5sum</b>, drawn in grey, compute SHA-1 and MD5: both are broken as cryptographic hashes (collisions are cheap to make), and they appear here only because many people still run them as checksums; a comparison with them is a comparison with the tool in hand, not with a safe alternative.</p></details>
+<details class="door" id="hashes"><summary>About the hashes compared</summary><p>BLAKE3 official is the <code>blake3</code> crate, the official implementation. BLAKE3-Servil is the implementation developed here. SHA-256 is the fastest implementation measured on each machine (the <code>sha2</code> crate, <code>ring</code>, or the operating system's CommonCrypto); the tooltip names which. <b>sha1sum and md5sum</b>, drawn in grey, compute SHA-1 and MD5: both are broken as cryptographic hashes (collisions are cheap to make), and they appear here only because many people still run them as checksums; a comparison with them is a comparison with the tool in hand, not with a safe alternative.</p>@RECORDS@</details>
 <footer>Each bar is the average speed from one benchmark run on that machine; click a bar for its full results. Measured by <a href="https://github.com/servil-software-factory/bench-hashes">bench-hashes</a>.</footer>
 <script>
 (function () {

@@ -31,6 +31,16 @@ documents that explain the benchmark (README, METHODOLOGY, CONTRIBUTING,
 the notes) may still change, to say it better.
 
 **Changes for the next release** (Devon Jonte, November 14, 2026):
+- **Provenance where its readers look**
+  ([reader contract](https://github.com/servil-software-factory/bench-hashes/issues/226)).
+  At Zooko's request, the existing “About the hashes compared” section holds
+  versions, sources and run settings, grouped by machine and separately for
+  library, file-tool and earlier-library runs. The long version/commit line
+  leaves the results headers. The overview shares the map's header formatter;
+  it retains complete benchmark versions and tool commands. Open records gain
+  readable contrast and phone wrapping. Historical maps receive a source-compatible
+  style patch, with their measured payloads unchanged. This serves both readers:
+  provenance seekers have a named home, and results readers have less clutter.
 - **Comparison records and early decisions**
   ([reporting](https://github.com/servil-software-factory/bench-hashes/pull/216),
   [saved runs](https://github.com/servil-software-factory/bench-hashes/pull/218),
