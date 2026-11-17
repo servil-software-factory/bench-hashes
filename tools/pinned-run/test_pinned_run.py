@@ -673,6 +673,19 @@ class Client(unittest.TestCase):
             self.assertEqual(result.returncode, code)
             self.assertIn("--study", result.stdout + result.stderr)
 
+    def test_wait_polls_once_a_second_and_preserves_terminal_result(self):
+        for pending in ([], ["queued", "running"]):
+            for result in ("VERIFIED", "FAILED\njob: exit 101", "CANCELLED", "lost"):
+                with self.subTest(pending=pending, result=result), \
+                     mock.patch.object(self.pr, "status", side_effect=pending + [result]) as status, \
+                     mock.patch.object(self.pr.time, "sleep") as sleep, \
+                     mock.patch.object(sys, "argv", [TOOL, "wait", "root@ours", "run"]), \
+                     mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+                    self.pr.main()
+                    self.assertEqual(sleep.call_args_list, [mock.call(1)] * len(pending))
+                    self.assertEqual(status.call_args_list, [mock.call("root@ours", "run")] * (len(pending) + 1))
+                    self.assertEqual(out.getvalue(), result + "\n")
+
     def test_a_host_list_takes_a_free_machine_else_the_shortest_queue(self):
         states = {"root@a": {"free": False, "queued": 2}, "root@b": {"free": True, "queued": 0}, "root@c": {"free": False, "queued": 0}}
         with mock.patch.object(self.pr, "call", lambda h, verb, *a, **k: json.dumps(states[h]).encode()):

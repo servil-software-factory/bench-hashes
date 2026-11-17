@@ -833,7 +833,7 @@ def main():
         print(status(a[1], a[2]))
     elif a[0] == "wait" and len(a) == 3:
         while (s := status(a[1], a[2])).split("\n", 1)[0] not in FINAL:
-            time.sleep(20)
+            time.sleep(1)
         print(s)
     elif a[0] == "next":
         parser = argparse.ArgumentParser(prog="pinned-run next")
