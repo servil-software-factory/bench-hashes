@@ -58,6 +58,26 @@ the notes) may still change, to say it better.
   layouts keep the debug entries of their symbol tables, which rustc strips
   in a step after the link; code and data are the same. The margin, the
   first stage's four pairs and the rule stay unchanged.
+- **End-to-end Bao outboard generation**
+  ([coverage](https://github.com/servil-software-factory/bench-hashes/issues/237)).
+  Zooko, November 17, 2026: `b3sum --outboard` is a supported CLI feature, so
+  later releases need regression measurements of the complete command. John
+  decides whether these cells gate 0.10.0. `tools/b3sum-contenders.py
+  --outboard` adds BLAKE3-Servil's outboard form beside each hash-only build,
+  with default threads and `--num-threads 1` where one commit is built. Each
+  `{OUT}` directory is emptied before its run, outside the timed process.
+  Repeated `--input LABEL` selects exact report labels, commas included, and
+  `--cache warm|cold` selects one cache state; the default suite is unchanged.
+  The warm run names
+  `1 MiB`, `mixed tree, 1000 files, 74 MiB`, and `1 GiB`, covering one real
+  outboard, many outboards, and large-file generation at both thread budgets.
+  A separate cold run names `1 GiB` with default threads. Hash-only contenders
+  remain the added-cost baselines; bao-tree comparisons are informational.
+  These are process-level cells, including input reads, hashing, outboard
+  creation, writes, and process exit. In-memory API measurements remain
+  diagnostics rather than part of this CLI gate.
+
+**Changes for 0.22, November 12-13, 2026** (Devon Jonte's decisions, each dated):
 
 **Changes for 0.23, November 14-16, 2026** (Devon Jonte's decisions, each dated):
 - **The pin is BLAKE3-Servil at 70483031** (Devon Jonte, November 16, 2026):
@@ -133,8 +153,6 @@ the notes) may still change, to say it better.
   Owned Pipeline cells are measured independently of those lent cells.
   This changes the measured API, so comparisons against earlier benchmarks
   must retain that qualification. Performance acceptance follows measurement.
-
-**Changes for 0.22, November 12-13, 2026** (Devon Jonte's decisions, each dated):
 - **The pin is BLAKE3-Servil 0.9.0** (Devon Jonte, November 13, 2026):
   commit bf2da8b957f5e0c80babb57952de3e53f95c921a, the release
   `0.9.0+73ee859efce085d28f1c2b22c35a5703403476f7`, two crates and no

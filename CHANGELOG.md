@@ -23,6 +23,14 @@ tracked nor optimized.
 16 layouts a side run four times each; they are now 64 layouts a side, run
 once. The margin and the rule stay unchanged.
 
+**Bao outboard generation has end-to-end regression cells.** `bench-hashes
+b3sum` can now select exact input labels with repeated `--input` and one cache state
+with `--cache`. `tools/b3sum-contenders.py --outboard` adds BLAKE3-Servil's
+outboard forms at both thread budgets beside hash-only baselines. The warm
+cells cover 1 MiB, the mixed 1000-file tree, and 1 GiB; a separate cold cell
+covers 1 GiB. Output directories start empty outside each timed process. John
+decides whether these cells gate BLAKE3-Servil 0.10.0.
+
 **Versions and sources live in “About the hashes compared”.** The existing
 collapsed overview section groups the exact recorded identities and settings
 by machine and run, including file tools and earlier-library comparisons. The

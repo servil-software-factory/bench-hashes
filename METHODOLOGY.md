@@ -756,7 +756,12 @@ draws it again), so a stored record draws the same map its run did.
 ## b3sum
 
 `bench-hashes b3sum NAME=COMMAND...` measures builds of `b3sum` as a
-person runs them. Each run is a new process, timed from start to exit (`clocks::child`),
+person runs them. In a command, `{OUT}` names the contender's own output
+directory, prepared empty before each run outside the timed child process,
+so a command that writes files (an outboard beside each hash) starts every
+round with the same storage state as its rivals.
+Each run is a new process, timed
+from start to exit (`clocks::child`),
 along with the operating system's resource counts for the child. Those
 counts include CPU time, peak memory, bytes read from storage, major page
 faults (Linux and macOS), and on macOS cycles and instructions per core
@@ -768,6 +773,14 @@ lines beside each run's time.
 - A tree of 1000 files of 16 KiB passed in one command (`b3sum $(find src -type f)`), and the same 1000 files hashed by one `b3sum` process per file.
 - A mixed tree of 1000 files (74 MiB in all, from 1 KiB to 16 MiB with sizes interleaved like a source checkout) passed in one command.
 - 16 files of 64 MiB (1 GiB in all; 4 of 16 MiB under `--quick`) passed in one command.
+
+Repeat `--input LABEL` to select any of these inputs by its exact report
+label, in the order named. One option takes the whole label, commas included.
+`--cache warm` measures only cached reads and `--cache cold`
+only evicted reads; with neither, the run measures every available state. A
+cold-only request on a filesystem that cannot evict files fails rather than
+reporting warm reads as cold. These selectors do not change an input's bytes,
+arguments, or timing.
 
 Each file contains BLAKE3's extended output of its relative path: the
 same bytes on every machine, and incompressible so a compressing
