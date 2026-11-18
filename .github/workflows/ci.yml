@@ -17,6 +17,8 @@ jobs:
       CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@v4
+      - name: Assignee workflow controls
+        run: python3 tools/test_one_assignee.py
       - name: Pinned runner and fault controls
         if: runner.os == 'Linux'
         run: python3 tools/pinned-run/check.py --output "${{ runner.temp }}/pinned-run-check"
