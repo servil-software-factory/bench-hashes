@@ -1012,12 +1012,24 @@ fn b3sum(path: &Path) -> Section {
         striped: names.iter().enumerate().map(|(i, n)| style(i, n).1).collect(),
         ours: names.iter().map(|n| fork(n)).collect(),
         shown: names.iter().map(|_| true).collect(),
-        names,
+        names: names.iter().map(|n| b3sum_display_name(n)).collect(),
         cells,
         about: about(&file.headers, &file.load),
         details: details(&file.headers, &file.load, &file.power, "b3sum.samples.tsv"),
         run: run_name(&file.headers),
         before: (String::new(), String::new()),
+    }
+}
+
+/// Human-readable legend label for a `b3sum.samples.tsv` contender key,
+/// distinguishing BLAKE3-Servil's `b3sum` from official BLAKE3's `b3sum`.
+fn b3sum_display_name(key: &str) -> String {
+    match key {
+        "b3sum" => "BLAKE3-Servil b3sum".to_owned(),
+        "b3sum-1-thread" => "BLAKE3-Servil b3sum (1 thread)".to_owned(),
+        "official" => "Official b3sum".to_owned(),
+        "official-1-thread" => "Official b3sum (1 thread)".to_owned(),
+        other => other.to_owned(),
     }
 }
 
@@ -1182,6 +1194,21 @@ pub fn command(args: &[String]) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn b3sum_display_names_distinguish_servil_and_official() {
+        assert_eq!(super::b3sum_display_name("b3sum"), "BLAKE3-Servil b3sum");
+        assert_eq!(
+            super::b3sum_display_name("b3sum-1-thread"),
+            "BLAKE3-Servil b3sum (1 thread)"
+        );
+        assert_eq!(super::b3sum_display_name("official"), "Official b3sum");
+        assert_eq!(
+            super::b3sum_display_name("official-1-thread"),
+            "Official b3sum (1 thread)"
+        );
+        assert_eq!(super::b3sum_display_name("sha256sum"), "sha256sum");
+    }
+
     #[test]
     fn load_warnings_carry_the_recorded_classification() {
         assert_eq!(

@@ -82,14 +82,14 @@ pub fn b3sum_from_samples(path: &str) -> Option<String> {
     let file = read_samples(path);
     let centi = |key: &str| rate(&file, &format!("{key}|{CELL}"));
     let mut bars = vec![Bar {
-        name: "b3sum".into(),
+        name: "BLAKE3-Servil b3sum".into(),
         centi: centi("b3sum")?,
         color: BLAKE3_COLOR,
         ours: true,
     }];
     if let Some(c) = centi("b3sum-1-thread") {
         bars.push(Bar {
-            name: "b3sum, one thread".into(),
+            name: "BLAKE3-Servil b3sum (1 thread)".into(),
             centi: c,
             color: BLAKE3_COLOR,
             ours: true,
