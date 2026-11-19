@@ -2259,6 +2259,9 @@ struct Roster {
     /// The cpuidle switch the controlled cells need; without it the run
     /// measures none of them.
     idle_control: Option<IdleControl>,
+    /// Opt-in diagnostic: log each duo cell entering and each copy's
+    /// phase completions to stderr, skipping all recorded result files.
+    trace_duo: bool,
 }
 
 impl Roster {
@@ -2325,6 +2328,7 @@ impl Roster {
             nonstop_visits: None,
             sample_sizes: "calibrated in this run".to_owned(),
             idle_control,
+            trace_duo: false,
         }
     }
 
@@ -2542,6 +2546,7 @@ struct Options {
     /// cell's visits (--nonstop-visits N): for the settling and variance studies.
     train: Train,
     nonstop_visits: Option<usize>,
+    trace_duo: bool,
 }
 
 /// How a run sizes each cell's samples. A comparison's runs share one set
@@ -2872,6 +2877,11 @@ fn parse_arguments() -> Options {
     };
     let quick = take_flag("--quick");
     let for_check = take_flag("--for-regression-check");
+    let trace_duo = take_flag("--trace-duo");
+    assert!(
+        !(trace_duo && for_check),
+        "--trace-duo is a diagnostic outside recorded regression checks"
+    );
 
     /* --points LIST and --rounds N narrow a --contenders run. */
     let mut take_value = |flag: &str| {
@@ -2964,6 +2974,7 @@ fn parse_arguments() -> Options {
         train,
         nonstop_visits,
         sizes_file,
+        trace_duo,
     }
 }
 
@@ -3158,6 +3169,7 @@ fn main() {
         train,
         nonstop_visits,
         sizes_file,
+        trace_duo,
     } = parse_arguments();
     let mut machine = machine_metadata();
 
@@ -3211,11 +3223,12 @@ fn main() {
     let mut roster = Roster::new(algorithms, quick, points, rounds, visits, idle_control);
     roster.train = train;
     roster.nonstop_visits = nonstop_visits;
+    roster.trace_duo = trace_duo;
     // Sizes from the cache where a calibration in this very context left
     // them (sizes_context); a run given --sizes or --calibrate-only does
     // as it is told.
     let context = sizes_context(&roster, &machine, threads);
-    let cache = matches!(sizes, Sizes::Calibrate)
+    let cache = (!trace_duo && matches!(sizes, Sizes::Calibrate))
         .then(|| sizes_cache_path(&context))
         .flatten();
     let cached = cache
@@ -3235,6 +3248,10 @@ fn main() {
     };
     let sizes = cached.map_or(sizes, |(sizes, _)| sizes);
     let (results, samples, load, iterations) = measure_all(&roster, &sizes);
+    if trace_duo {
+        eprintln!("trace-duo: complete (diagnostic run; no speed files written)");
+        return;
+    }
     if let Some(path) = &cache {
         if from_cache {
             if let Some(why) = sizes_stale(&roster, &samples, &iterations) {
@@ -3582,6 +3599,7 @@ fn measure_all(
             .then(|| roster.idle_control.as_ref().map(IdleControl::apply))
             .flatten();
 
+        let mut prev_duo_cell: Option<String> = None;
         for round in 0..roster.rounds {
             progress.round(round, &samples.solo);
             clocks::load::tick();
@@ -3645,6 +3663,20 @@ fn measure_all(
                         .into_iter()
                         .filter(|&p| Scenario::Shared(p).measures(algorithm, point.use_case))
                         .map(|p| {
+                            if roster.trace_duo {
+                                let cell_id = duo_trace_cell(algorithm, point, p, iterations);
+                                eprintln!(
+                                    "{}",
+                                    format_duo_trace_enter(
+                                        &cell_id,
+                                        round + 1,
+                                        roster.rounds,
+                                        train,
+                                        prev_duo_cell.as_deref(),
+                                    )
+                                );
+                                prev_duo_cell = Some(cell_id);
+                            }
                             (
                                 p,
                                 duo.run(
@@ -3657,6 +3689,7 @@ fn measure_all(
                                     topology()
                                         .cpus(p)
                                         .expect("a placement measured has its CPUs, or the OS's"),
+                                    roster.trace_duo,
                                 ),
                             )
                         })
@@ -6368,6 +6401,38 @@ struct DuoJob {
     cpus: Option<[usize; 2]>,
     /// Which workers have taken this job (a bit each).
     taken: u8,
+    /// Diagnostic-only stderr tracing at copy phase boundaries (--trace-duo).
+    trace: bool,
+}
+
+fn duo_trace_cell(
+    algorithm: Algorithm,
+    point: Point,
+    placement: Placement,
+    iterations: usize,
+) -> String {
+    format!(
+        "contender={} family={:?} point={:?} mode={} iterations={iterations}",
+        algorithm.key(),
+        point.use_case,
+        point.label,
+        Scenario::Shared(placement).key(),
+    )
+}
+
+fn format_duo_trace_enter(
+    cell_id: &str,
+    round: usize,
+    rounds: usize,
+    train: Train,
+    prev: Option<&str>,
+) -> String {
+    format!(
+        "trace-duo: enter round={round}/{rounds} {cell_id} samples={} warm_ms={} prev=[{}]",
+        train.samples,
+        train.warm_ns / 1_000_000,
+        prev.unwrap_or("none"),
+    )
 }
 
 // The input pointers are borrows of the caller's buffers, which outlive the
@@ -6399,6 +6464,7 @@ impl Duo {
     /// at once, copy 0 over `input` and copy 1 over `other`, each copy its
     /// warm-up and then its samples back to back from one release; returns
     /// each copy's samples, each its time from its own start and its counts.
+    #[allow(clippy::too_many_arguments)]
     fn run(
         &self,
         algorithm: Algorithm,
@@ -6408,6 +6474,7 @@ impl Duo {
         iterations: usize,
         train: Train,
         cpus: Option<[usize; 2]>,
+        trace: bool,
     ) -> [DuoWork; 2] {
         use std::sync::atomic::Ordering;
         assert_eq!(
@@ -6426,6 +6493,7 @@ impl Duo {
                 train,
                 cpus,
                 taken: 0,
+                trace,
             });
             self.sampling.store(2, Ordering::Release);
             self.posted.notify_all();
@@ -6499,12 +6567,37 @@ impl Duo {
                 job.iterations,
                 job.train.warm_ns,
             );
+            if job.trace {
+                eprintln!(
+                    "trace-duo: copy-{copy} warm_up_done contender={} family={:?} point={:?}",
+                    job.algorithm.key(),
+                    job.point.use_case,
+                    job.point.label,
+                );
+            }
             let samples: Vec<DuoCopy> = (0..job.train.samples)
                 .map(|_| take_sample(job.algorithm, input, job.point, job.iterations))
                 .collect();
+            if job.trace {
+                eprintln!(
+                    "trace-duo: copy-{copy} samples_done count={} contender={} family={:?} point={:?}",
+                    samples.len(),
+                    job.algorithm.key(),
+                    job.point.use_case,
+                    job.point.label,
+                );
+            }
             self.sampling.fetch_sub(1, Ordering::AcqRel);
             while self.sampling.load(Ordering::Acquire) > 0 {
                 take_sample(job.algorithm, input, job.point, job.iterations);
+            }
+            if job.trace {
+                eprintln!(
+                    "trace-duo: copy-{copy} tail_done contender={} family={:?} point={:?}",
+                    job.algorithm.key(),
+                    job.point.use_case,
+                    job.point.label,
+                );
             }
             let worked_until_ns = clocks::load::now_ns();
             let mut finished = self.finished.lock().unwrap();
@@ -10476,6 +10569,7 @@ mod correctness_tests {
                 1,
                 train,
                 cpus,
+                false,
             );
             assert_eq!(first.samples.len(), 200);
             assert!(
@@ -10487,6 +10581,37 @@ mod correctness_tests {
                 second.worked_until_ns
             );
         }
+    }
+
+    #[test]
+    fn duo_trace_formats_cell_and_predecessor_and_runs_cleanly() {
+        let first_point = POINTS[point("64 B", UseCase::ContinuousMessages)];
+        let prev = duo_trace_cell(Algorithm::Blake3ServilMt, first_point, Placement::Os, 128);
+        let next_point = POINTS[point("4 KiB", UseCase::ContinuousMessages)];
+        let cur = duo_trace_cell(
+            Algorithm::Blake3ServilMt,
+            next_point,
+            Placement::OneCache,
+            16,
+        );
+        let line = format_duo_trace_enter(
+            &cur,
+            3,
+            24,
+            Train {
+                warm_ns: 25_000_000,
+                samples: 4,
+            },
+            Some(&prev),
+        );
+        assert!(line.contains("round=3/24"), "{line}");
+        assert!(line.contains("contender=blake3-servil-mt"), "{line}");
+        assert!(line.contains("family=ContinuousMessages"), "{line}");
+        assert!(line.contains("point=\"4 KiB\""), "{line}");
+        assert!(line.contains("mode=shared-one-cache"), "{line}");
+        assert!(line.contains("iterations=16"), "{line}");
+        assert!(line.contains("prev=[contender=blake3-servil-mt"), "{line}");
+        assert!(line.contains("point=\"64 B\""), "{line}");
     }
 
     /// A machine that offers no pair (a Mac's empty table, set here on any
