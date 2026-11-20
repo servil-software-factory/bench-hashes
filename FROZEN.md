@@ -30,6 +30,17 @@ read as alike. The
 documents that explain the benchmark (README, METHODOLOGY, CONTRIBUTING,
 the notes) may still change, to say it better.
 
+**Changes for the next release, November 20, 2026** (Devon Jonte's decision, dated):
+- **The overview shows a machine's newest record** (Devon Jonte, November
+  20, 2026; Zooko approved it). A machine keeps a folder a kernel, so it
+  can hold several records, and a family's column opened on the chosen
+  machine's first by folder name: at 0.23 and 0.24 the Ryzen 7 9700X's
+  column opened on its 0.22 record of November 13, its current record
+  behind the door. The column now opens on the chosen machine's newest
+  record that this release reads. The change alters which published
+  record a column shows and no measurement, so Zooko waived the fleet's
+  rerun: the page is redrawn from the 0.24 records.
+
 **Changes for 0.24, November 18–20, 2026** (Zooko and Devon Jonte's decisions, each dated):
 - **The pin is BLAKE3-Servil 0.10.0** (Devon Jonte, November 20, 2026):
   commit `2fd4ff6f643ef04f98f7a2e5f8ca0f096298827a` (`v0.10.0+b0b4c80c39ff28c2dbcc2234a6dc17b40911830d`), the stable 0.10.0 release.
@@ -1380,7 +1391,8 @@ use, across machines?".
 - **The grid: a column a kind of machine, a row a representative cell.**
   The columns are Arm, AMD and Intel (and "Other" for a run on another
   CPU), each the family's machine in `overview::CHOSEN` where the
-  results hold it, else the family's first. The page's door, "All N
+  results hold it (its newest record, where it has several), else the
+  family's first. The page's door, "All N
   machines measured", shows every machine as a card in plain words (its
   kind, design and year, `overview::KNOWN`, with the headline contest at
   a glance); a card puts its machine in its family's column, and each

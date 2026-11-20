@@ -770,14 +770,18 @@ pub fn shown(rows: &[Row]) -> Vec<usize> {
                 .filter(|&i| family(&rows[i]) == *f)
                 .collect();
             let chosen = CHOSEN.iter().find(|(c, _)| c == f).map(|(_, m)| *m);
+            // The chosen machine's newest record: a machine keeps a folder
+            // a kernel, so it can hold several (the day is ISO, so its text
+            // orders it; of one day's, the later folder).
             members
                 .iter()
                 .copied()
-                .find(|&i| {
+                .filter(|&i| {
                     Some(rows[i].machine.as_str()) == chosen
                         && !rows[i].virtual_machine
                         && !rows[i].stale
                 })
+                .max_by_key(|&i| (rows[i].day.clone(), i))
                 .or_else(|| {
                     members
                         .iter()
@@ -1734,6 +1738,25 @@ mod tests {
             [1],
             "the EPYC 9255, the 9700X's run being 0.18's"
         );
+    }
+
+    #[test]
+    fn a_machine_with_several_records_shows_its_newest() {
+        let none = || PICKS.iter().map(|_| Vec::new()).collect::<Vec<Bars>>();
+        let mut rows = [
+            row("AMD Ryzen 7 9700X", false, none()),
+            row("AMD Ryzen 7 9700X", false, none()),
+            row("AMD Ryzen 7 9700X", false, none()),
+            row("AMD EPYC 9255", false, none()),
+        ];
+        rows[0].day = "2026-11-13".to_owned();
+        rows[1].day = "2026-11-20".to_owned();
+        rows[2].day = "2026-10-27".to_owned();
+        rows[3].day = "2026-11-21".to_owned();
+        assert_eq!(shown(&rows), [1], "the 9700X's record of November 20");
+        // A record of another release is never the one shown, however new.
+        rows[1].stale = true;
+        assert_eq!(shown(&rows), [0]);
     }
 
     #[test]

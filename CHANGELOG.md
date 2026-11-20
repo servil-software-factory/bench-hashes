@@ -1,3 +1,10 @@
+# bench-hashes next
+
+**The overview opens each column on its machine's newest record.** A machine
+with records under several kernels showed the first by folder name, so the
+Ryzen 7 9700X's column opened on an older record while its current one waited
+behind the door.
+
 # bench-hashes 0.24.0+70970a7414b5bbb1f14db73138a764dd84d3da18
 
 **`b3sum` labels distinguish BLAKE3-Servil from official.** Maps and charts
