@@ -32,7 +32,7 @@ the notes) may still change, to say it better.
 
 **Changes for 0.24, November 18–20, 2026** (Zooko and Devon Jonte's decisions, each dated):
 - **The pin is BLAKE3-Servil 0.10.0** (Devon Jonte, November 20, 2026):
-  commit `d3ed18d19a49a6c8506f175cf316fc36aad77ba6` (`v0.10.0+42fe3d48dae85b4469c4edfffd17578fa114c0d7`), the stable 0.10.0 release.
+  commit `2fd4ff6f643ef04f98f7a2e5f8ca0f096298827a` (`v0.10.0+b0b4c80c39ff28c2dbcc2234a6dc17b40911830d`), the stable 0.10.0 release.
   Replaces the 0.23 pin (`70483031`) with the shipped 0.10.0 library and
   `b3sum` (including the `io_uring` + `Pipeline` streaming engine, one-node
   pool placement with sandbox fallback, Apple Arm64 wake-order fences,

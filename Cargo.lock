@@ -40,8 +40,8 @@ dependencies = [
 
 [[package]]
 name = "blake3-servil"
-version = "0.10.0+42fe3d48dae85b4469c4edfffd17578fa114c0d7"
-source = "git+https://github.com/servil-software-factory/BLAKE3?rev=d3ed18d19a49a6c8506f175cf316fc36aad77ba6#d3ed18d19a49a6c8506f175cf316fc36aad77ba6"
+version = "0.10.0+b0b4c80c39ff28c2dbcc2234a6dc17b40911830d"
+source = "git+https://github.com/servil-software-factory/BLAKE3?rev=2fd4ff6f643ef04f98f7a2e5f8ca0f096298827a#2fd4ff6f643ef04f98f7a2e5f8ca0f096298827a"
 dependencies = [
  "arrayvec",
  "blake3-servil-core",
@@ -50,8 +50,8 @@ dependencies = [
 
 [[package]]
 name = "blake3-servil-core"
-version = "0.10.0+42fe3d48dae85b4469c4edfffd17578fa114c0d7"
-source = "git+https://github.com/servil-software-factory/BLAKE3?rev=d3ed18d19a49a6c8506f175cf316fc36aad77ba6#d3ed18d19a49a6c8506f175cf316fc36aad77ba6"
+version = "0.10.0+b0b4c80c39ff28c2dbcc2234a6dc17b40911830d"
+source = "git+https://github.com/servil-software-factory/BLAKE3?rev=2fd4ff6f643ef04f98f7a2e5f8ca0f096298827a#2fd4ff6f643ef04f98f7a2e5f8ca0f096298827a"
 dependencies = [
  "arrayvec",
  "blake3-servil-version",
@@ -63,8 +63,8 @@ dependencies = [
 
 [[package]]
 name = "blake3-servil-version"
-version = "0.10.0+42fe3d48dae85b4469c4edfffd17578fa114c0d7"
-source = "git+https://github.com/servil-software-factory/BLAKE3?rev=d3ed18d19a49a6c8506f175cf316fc36aad77ba6#d3ed18d19a49a6c8506f175cf316fc36aad77ba6"
+version = "0.10.0+b0b4c80c39ff28c2dbcc2234a6dc17b40911830d"
+source = "git+https://github.com/servil-software-factory/BLAKE3?rev=2fd4ff6f643ef04f98f7a2e5f8ca0f096298827a#2fd4ff6f643ef04f98f7a2e5f8ca0f096298827a"
 
 [[package]]
 name = "block-buffer"
