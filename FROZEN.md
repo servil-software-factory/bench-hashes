@@ -30,7 +30,13 @@ read as alike. The
 documents that explain the benchmark (README, METHODOLOGY, CONTRIBUTING,
 the notes) may still change, to say it better.
 
-**Changes for the next release** (each dated, with who decided):
+**Changes for 0.24, November 18–20, 2026** (Zooko and Devon Jonte's decisions, each dated):
+- **The pin is BLAKE3-Servil 0.10.0** (Devon Jonte, November 20, 2026):
+  commit `d3ed18d19a49a6c8506f175cf316fc36aad77ba6` (`v0.10.0+42fe3d48dae85b4469c4edfffd17578fa114c0d7`), the stable 0.10.0 release.
+  Replaces the 0.23 pin (`70483031`) with the shipped 0.10.0 library and
+  `b3sum` (including the `io_uring` + `Pipeline` streaming engine, one-node
+  pool placement with sandbox fallback, Apple Arm64 wake-order fences,
+  `hazmat` and `zeroize` removal, and all audit-round repairs).
 - **The margin is 5%** (Zooko, November 18, 2026; 3% since October 2).
   A cell is marked slower or faster when the rule's test passes and its
   ratio lies beyond 5%, in the regression check and in the b3sum suite's
@@ -69,6 +75,12 @@ the notes) may still change, to say it better.
   layouts keep the debug entries of their symbol tables, which rustc strips
   in a step after the link; code and data are the same. The margin, the
   first stage's four pairs and the rule stay unchanged.
+
+- **`b3sum` display labels distinguish BLAKE3-Servil from official**
+  (Zooko; Devon Jonte, November 19, 2026). Maps and charts display
+  `BLAKE3-Servil b3sum` and `Official b3sum` (and `(1 thread)` forms) so
+  readers never confuse the two binaries; `b3sum.samples.tsv` keeps its
+  existing contender keys.
 
 **Changes for 0.23, November 14-16, 2026** (Devon Jonte's decisions, each dated):
 - **The pin is BLAKE3-Servil at 70483031** (Devon Jonte, November 16, 2026):

@@ -1,5 +1,10 @@
 # Unreleased
 
+**`b3sum` labels distinguish BLAKE3-Servil from official.** Maps and charts
+display `BLAKE3-Servil b3sum` and `Official b3sum` (and their `(1 thread)`
+forms), while `b3sum.samples.tsv` keeps its existing keys so historical records
+remain readable.
+
 **`check` links its layouts without compiling each one.** A side's first
 layout of a stage is compiled as before, through a `cc` that keeps the link's
 arguments, with the link's inputs left in place; the stage's other layouts run
