@@ -1,4 +1,4 @@
-# Unreleased
+# bench-hashes 0.24.0
 
 **`b3sum` labels distinguish BLAKE3-Servil from official.** Maps and charts
 display `BLAKE3-Servil b3sum` and `Official b3sum` (and their `(1 thread)`
@@ -30,6 +30,8 @@ memory nodes is neither tracked nor optimized.
 **The second stage gives every pair its own link layout.** Its 64 pairs were
 16 layouts a side run four times each; they are now 64 layouts a side, run
 once. The margin and the rule stay unchanged.
+
+# bench-hashes 0.23.0+ba147639c35454e648847adbb08e2435e450493e
 
 **Versions and sources live in “About the hashes compared”.** The existing
 collapsed overview section groups the exact recorded identities and settings
@@ -82,7 +84,7 @@ arrival waits and consuming every completed result stay in the timed work.
 The lent-buffer cells retain synchronous calls for comparison. The library
 pin is `f62bc6ac0bc1c86861659d61ffbf4e9546bc8aec`.
 
-# bench-hashes 0.23.0+ba147639c35454e648847adbb08e2435e450493e
+# bench-hashes 0.22.0+d7723f110a6f519cccb2e4ab8f2a18be7a4f4d41
 
 **Every cell's timed code is compiled by itself.** Each contender's loop for each use case is now a function of its own, so a change in one contender's code cannot shift how another's cell is laid out. Until now a use case's loops for every contender shared one large function, and on one machine that moved a cell 8 to 15% when unrelated code changed. The calls measured are the same.
 
