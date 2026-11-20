@@ -1,4 +1,4 @@
-# bench-hashes 0.24.0
+# bench-hashes 0.24.0+70970a7414b5bbb1f14db73138a764dd84d3da18
 
 **`b3sum` labels distinguish BLAKE3-Servil from official.** Maps and charts
 display `BLAKE3-Servil b3sum` and `Official b3sum` (and their `(1 thread)`

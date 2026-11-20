@@ -10,7 +10,7 @@ checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
 name = "bench-hashes"
-version = "0.23.0+ba147639c35454e648847adbb08e2435e450493e"
+version = "0.24.0+70970a7414b5bbb1f14db73138a764dd84d3da18"
 dependencies = [
  "blake3",
  "blake3-servil",

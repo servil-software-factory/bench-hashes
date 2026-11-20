@@ -1,6 +1,6 @@
 [package]
 name = "bench-hashes"
-version = "0.23.0+ba147639c35454e648847adbb08e2435e450493e"
+version = "0.24.0+70970a7414b5bbb1f14db73138a764dd84d3da18"
 edition = "2021"
 rust-version = "1.88"
 license = "MIT OR Apache-2.0 OR TGPPL-1.0" # OR BOSL-1.0, see LICENSE-BOSL.txt
