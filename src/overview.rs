@@ -728,14 +728,15 @@ pub fn text(rows: &[Row]) -> String {
 /// leads most (Zooko, October 24), by their index in PICKS.
 /// The grid's columns, one a family of CPU (Zooko, October 27): in each,
 /// the machine measured that is most like the family's machines shipping
-/// through 2027. The Apple M4 Max stands for Apple silicon, the most common
-/// Arm computer a program like this runs on; the Ryzen 7 9700X for AMD's
+/// through 2027. The Apple M6 stands for Apple silicon, the most common
+/// Arm computer a program like this runs on (the newest of the Macs
+/// measured each release); the Ryzen 7 9700X for AMD's
 /// Zen 5 and its successors, desktops and laptops outnumbering servers; the
 /// i7-12700K for Intel's hybrid PCs (performance and efficiency cores,
 /// AVX2, no AVX-512). Where the results lack a family's chosen machine, its
 /// first machine stands in, so a reader's own run shows their machine.
 pub const CHOSEN: [(&str, &str); 3] = [
-    ("Arm", "Apple M4 Max"),
+    ("Arm", "Apple M6"),
     ("AMD", "AMD Ryzen 7 9700X"),
     ("Intel", "Intel Core i7-12700K"),
 ];
@@ -1738,6 +1739,18 @@ mod tests {
             [1],
             "the EPYC 9255, the 9700X's run being 0.18's"
         );
+    }
+
+    #[test]
+    fn the_arm_column_is_the_m6_beside_other_macs() {
+        let none = || PICKS.iter().map(|_| Vec::new()).collect::<Vec<Bars>>();
+        // Folder order puts the M4 first; the chosen M6 takes the column.
+        let rows = [
+            row("Apple M4", false, none()),
+            row("Apple M4 Max", false, none()),
+            row("Apple M6", false, none()),
+        ];
+        assert_eq!(shown(&rows), [2]);
     }
 
     #[test]

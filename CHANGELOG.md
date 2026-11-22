@@ -5,6 +5,11 @@ with records under several kernels showed the first by folder name, so the
 Ryzen 7 9700X's column opened on an older record while its current one waited
 behind the door.
 
+**The Apple M4 joins the records, and the Arm column is the Apple M6.** A
+second timing Mac, an Apple M4 (4 performance and 6 efficiency cores), has its
+first record. The front page's Arm column names the M6, the newest Mac measured
+each release; the M4 is one click away behind the door.
+
 # bench-hashes 0.24.0+70970a7414b5bbb1f14db73138a764dd84d3da18
 
 **`b3sum` labels distinguish BLAKE3-Servil from official.** Maps and charts

@@ -30,7 +30,7 @@ read as alike. The
 documents that explain the benchmark (README, METHODOLOGY, CONTRIBUTING,
 the notes) may still change, to say it better.
 
-**Changes for the next release, November 20, 2026** (Devon Jonte's decision, dated):
+**Changes for the next release, November 20–22, 2026** (Devon Jonte's decisions, each dated):
 - **The overview shows a machine's newest record** (Devon Jonte, November
   20, 2026; Zooko approved it). A machine keeps a folder a kernel, so it
   can hold several records, and a family's column opened on the chosen
@@ -40,6 +40,14 @@ the notes) may still change, to say it better.
   record that this release reads. The change alters which published
   record a column shows and no measurement, so Zooko waived the fleet's
   rerun: the page is redrawn from the 0.24 records.
+- **The Arm column is the Apple M6** (Devon Jonte, November 22, 2026;
+  Zooko agreed). `overview::CHOSEN` named the Apple M4 Max, last measured
+  at 0.20.4, so the column fell to the family's first current machine by
+  folder name: the M6, until the Apple M4 timing Mac's first record
+  (November 21) would have taken it. The M6 is the newest Mac measured
+  each release and the one the column has shown since 0.21; the M4 and
+  the M4 Max wait behind the door. No measurement changes, so the page is
+  redrawn from the 0.24 records with no rerun.
 
 **Changes for 0.24, November 18–20, 2026** (Zooko and Devon Jonte's decisions, each dated):
 - **The pin is BLAKE3-Servil 0.10.0** (Devon Jonte, November 20, 2026):
