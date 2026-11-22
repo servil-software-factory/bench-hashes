@@ -10,6 +10,17 @@ second timing Mac, an Apple M4 (4 performance and 6 efficiency cores), has its
 first record. The front page's Arm column names the M6, the newest Mac measured
 each release; the M4 is one click away behind the door.
 
+**The turn cells show the Pipeline.** Many messages open at once, their pieces
+arriving interleaved (a server's uploads), were measured only through the
+incremental Hashers. BLAKE3-Servil's multithreaded form now serves a turn's
+arrivals through `throughput::Pipeline`, a Room per open message; its
+single-threaded form keeps `throughput::update_each`. On 1,024 open messages
+of 1 KiB the Pipeline takes 82% to 88% less time after a gap; on the
+256-message schedule of mixed lengths it reads from 6% faster to 20% slower
+depending on the gap (a small burst pays the workers' wake). Numbers of the
+multithreaded turn cells from this release on compare with earlier ones as
+two APIs do.
+
 # bench-hashes 0.24.0+70970a7414b5bbb1f14db73138a764dd84d3da18
 
 **`b3sum` labels distinguish BLAKE3-Servil from official.** Maps and charts

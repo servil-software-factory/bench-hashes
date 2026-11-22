@@ -33,7 +33,12 @@ fn one_thread_call(column: &str, call: &str, doc: &str) -> (String, String) {
                 "throughput::hash".to_owned(),
                 "throughput/fn.hash.html".to_owned(),
             ),
-            _ => unreachable!("Pipeline serves owned and receiving cells"),
+            // A turn of many open messages' pieces.
+            "busy" | "idle" | "brief" | "controlled" => (
+                "throughput::update_each".to_owned(),
+                "performance/fn.update_each.html".to_owned(),
+            ),
+            _ => unreachable!("Pipeline serves owned, receiving and turn cells"),
         };
     }
     if call == "throughput::hash_multithreaded" {
@@ -174,26 +179,26 @@ fn place(use_case: UseCase) -> (&'static str, &'static str, &'static str, &'stat
         UseCase::InterleavedTurn => (
             "many",
             "busy",
-            "throughput::update_each_multithreaded",
-            "performance/fn.update_each_multithreaded.html",
+            "throughput::Pipeline",
+            "throughput/struct.Pipeline.html",
         ),
         UseCase::IdleInterleavedTurn => (
             "many",
             "idle",
-            "throughput::update_each_multithreaded",
-            "performance/fn.update_each_multithreaded.html",
+            "throughput::Pipeline",
+            "throughput/struct.Pipeline.html",
         ),
         UseCase::BriefIdleInterleavedTurn => (
             "many",
             "brief",
-            "throughput::update_each_multithreaded",
-            "performance/fn.update_each_multithreaded.html",
+            "throughput::Pipeline",
+            "throughput/struct.Pipeline.html",
         ),
         UseCase::ControlledIdleInterleavedTurn => (
             "many",
             "controlled",
-            "throughput::update_each_multithreaded",
-            "performance/fn.update_each_multithreaded.html",
+            "throughput::Pipeline",
+            "throughput/struct.Pipeline.html",
         ),
         UseCase::Collection => (
             "coll",

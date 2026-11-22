@@ -48,6 +48,31 @@ the notes) may still change, to say it better.
   each release and the one the column has shown since 0.21; the M4 and
   the M4 Max wait behind the door. No measurement changes, so the page is
   redrawn from the 0.24 records with no rerun.
+- **BLAKE3-Servil mt serves the turn cells through the Pipeline** (Devon
+  Jonte, November 22, 2026; Zooko asked whether a caller of the
+  incremental Hasher gains by moving to the Pipeline, and the benchmark
+  had no cell that said; bench-hashes #258). Many messages open at once,
+  their pieces arriving interleaved, were measured only through the
+  Hashers: `update_each` for st and `update_each_multithreaded` for mt,
+  which never woke the pool at these sizes and read as st did. In the
+  four turn use cases mt now holds a `Pipeline` per producer and a Room
+  per open message whatever its length (the caller that knows no
+  lengths; a caller that gathers 1 KiB messages into shared Rooms read
+  26% to 31% faster still in a probe, BLAKE3 #470). The lent cell
+  (`Interleaved`) keeps `update_each_multithreaded`, as every lent cell
+  keeps its synchronous call. One library (0.10.0) under both benches
+  across all cells on a Ryzen 9700X and an EPYC 9255: mt at `1024 x 1 KiB`
+  takes 82% to 88% less time after every gap; mt at `256` reads from 6%
+  faster to 20% slower depending on the gap and machine (+17.3% after
+  20 μs idle over 64 pairs on the 9700X, +20.0% after other work on the
+  9255: a small 256 KiB burst after a gap pays the workers' wake). So mt's
+  turn cells
+  measure another API from this release on, and compare with earlier
+  releases' as the continuous cells did at 0.23. One more cell moves
+  with it: st's code is the same, and its `256` turn cells after idling
+  read 4% to 8% slower, because a call after idling finds in the caches
+  what its neighbour left (METHODOLOGY, Interleaving); st alone in the
+  process reads level under both benches.
 
 **Changes for 0.24, November 18–20, 2026** (Zooko and Devon Jonte's decisions, each dated):
 - **The pin is BLAKE3-Servil 0.10.0** (Devon Jonte, November 20, 2026):
@@ -1501,8 +1526,8 @@ blake3-servil-st ReceivingMessage: convenience::Hasher::new(Mode::Plain, None), 
 blake3-servil-mt ReceivingMessage: throughput::Pipeline kept per producer (1024 message slots, 16 rooms of 64 KiB); message with no length hint, received fragments accumulated directly in rooms, commit each full room and the final partial room, end, then consume the Hashed event before the next message; the same fragment trace and fixed deadlines as servil st; reads, waits, commits and completion timed together
 blake3-servil-st InterleavedTurn: the Hashers of the open messages (256 in pieces up to 16 KiB, one call of turns of up to 64 pieces, 256 KiB; or 1,024 of 1 KiB in 256-byte pieces, one call a whole cycle, four turns of a piece of each message), each after other work: throughput::update_each, then throughput::finalize_each for the messages that ended in it
 blake3-servil-st IdleInterleavedTurn: the Hashers of the open messages (256 in pieces up to 16 KiB, one call of turns of up to 64 pieces, 256 KiB; or 1,024 of 1 KiB in 256-byte pieces, one call a whole cycle, four turns of a piece of each message), each after idling: throughput::update_each, then throughput::finalize_each for the messages that ended in it
-blake3-servil-mt InterleavedTurn: the Hashers of the open messages (256 in pieces up to 16 KiB, one call of turns of up to 64 pieces, 256 KiB; or 1,024 of 1 KiB in 256-byte pieces, one call a whole cycle, four turns of a piece of each message), each after other work: throughput::update_each_multithreaded, then throughput::finalize_each for the messages that ended in it
-blake3-servil-mt IdleInterleavedTurn: the Hashers of the open messages (256 in pieces up to 16 KiB, one call of turns of up to 64 pieces, 256 KiB; or 1,024 of 1 KiB in 256-byte pieces, one call a whole cycle, four turns of a piece of each message), each after idling: throughput::update_each_multithreaded, then throughput::finalize_each for the messages that ended in it
+blake3-servil-mt InterleavedTurn: the open messages (256 in pieces up to 16 KiB, one call of turns of up to 64 pieces, 256 KiB; or 1,024 of 1 KiB in 256-byte pieces, one call a whole cycle, four turns of a piece of each message), each after other work: throughput::Pipeline kept per producer (twice the open messages in message slots, and as many Rooms of 64 KiB and 16 more); a Room per open message whatever its length, each arriving piece read straight into it, a full Room committed, what is left committed when the message ends; every ended message's Hashed event consumed before the call returns
+blake3-servil-mt IdleInterleavedTurn: the open messages (256 in pieces up to 16 KiB, one call of turns of up to 64 pieces, 256 KiB; or 1,024 of 1 KiB in 256-byte pieces, one call a whole cycle, four turns of a piece of each message), each after idling: throughput::Pipeline kept per producer (twice the open messages in message slots, and as many Rooms of 64 KiB and 16 more); a Room per open message whatever its length, each arriving piece read straight into it, a full Room committed, what is left committed when the message ends; every ended message's Hashed event consumed before the call returns
 blake3-servil-st MerkleTree: throughput::hash_many(Mode::Keyed(key), &Batch::from_blocks(layer, len), out) for each layer, a tree a sample: the leaves (256 B) written into a kept buffer and hashed under the leaf key, then each layer of parents (64 B, two children's digests) under the parent key into a kept buffer of its own, to the root; leaves of 32 or 16 bytes written into a kept Packed of their length and hashed as they are, each layer's digests into a kept Packed<32>, two by two the next layer's parents (as_blocks), with no copy into blocks
 blake3-servil-mt MerkleTree: throughput::hash_many_multithreaded(Mode::Keyed(key), &Batch::from_blocks(layer, len), out) for each layer, a tree a sample: the leaves (256 B) written into a kept buffer and hashed under the leaf key, then each layer of parents (64 B, two children's digests) under the parent key into a kept buffer of its own, to the root; leaves of 32 or 16 bytes written into a kept Packed of their length and hashed as they are, each layer's digests into a kept Packed<32>, two by two the next layer's parents (as_blocks), with no copy into blocks
 blake3-servil-st OneMessage: convenience::hash(input), each call after other work

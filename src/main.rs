@@ -4612,6 +4612,7 @@ fn hash_batch_of(
         | UseCase::ControlledIdleInterleavedTurn => {
             return hash_interleaved(
                 algorithm,
+                point.use_case != UseCase::Interleaved,
                 interleaved_spec(&point),
                 input,
                 point.bytes,
@@ -5021,6 +5022,10 @@ fn hash_stream_from<const RECEIVING: bool>(
 #[inline(always)]
 fn hash_interleaved(
     algorithm: Algorithm,
+    // A turn cell (its buffers the program's own between calls): BLAKE3
+    // servil mt serves it through the Pipeline. The lent cell keeps the
+    // synchronous call, as every lent cell does.
+    turn: bool,
     spec: &'static InterleavedSpec,
     input: &[u8],
     budget: usize,
@@ -5063,6 +5068,31 @@ fn hash_interleaved(
             per_message(blake3::Hasher::new, |h| *h.finalize().as_bytes()),
             consume,
         ),
+        Algorithm::Blake3ServilMt if turn => {
+            // The Pipeline serves the arrivals: a Room per open message.
+            // Its schedule is kept apart from the lent cell's Hashers.
+            let key = "blake3-servil-mt turn";
+            let turns = (key, spec.label);
+            let mut consume = consume;
+            each_interleaved(
+                key,
+                spec,
+                input,
+                budget,
+                iterations,
+                pipeline::TurnSlot::new,
+                move |slots: &mut [pipeline::TurnSlot], arriving: &[(usize, &[u8])]| {
+                    pipeline::turn_update(turns, slots, arriving)
+                },
+                move |slots: &mut [pipeline::TurnSlot],
+                      ended: &[usize],
+                      consume: &mut dyn FnMut(&[u8])| {
+                    pipeline::turn_finish(turns, slots, ended, consume)
+                },
+                &mut consume,
+            );
+            pipeline::turn_drain(turns, spec.open, &mut consume)
+        }
         Algorithm::Blake3ServilSt | Algorithm::Blake3ServilMt => {
             let update = if algorithm == Algorithm::Blake3ServilSt {
                 blake3_servil::throughput::update_each
@@ -6025,8 +6055,8 @@ const SERVIL_CALLS: [(Algorithm, UseCase, &str); 36] = [
     (Algorithm::Blake3ServilMt, UseCase::ReceivingMessage, "throughput::Pipeline kept per producer (1024 message slots, 16 rooms of 64 KiB); message with no length hint, received fragments accumulated directly in rooms, commit each full room and the final partial room, end, then consume the Hashed event before the next message; the same fragment trace and fixed deadlines as servil st; reads, waits, commits and completion timed together"),
     (Algorithm::Blake3ServilSt, UseCase::InterleavedTurn, "the Hashers of the open messages (256 in pieces up to 16 KiB, one call of turns of up to 64 pieces, 256 KiB; or 1,024 of 1 KiB in 256-byte pieces, one call a whole cycle, four turns of a piece of each message), each after other work: throughput::update_each, then throughput::finalize_each for the messages that ended in it"),
     (Algorithm::Blake3ServilSt, UseCase::IdleInterleavedTurn, "the Hashers of the open messages (256 in pieces up to 16 KiB, one call of turns of up to 64 pieces, 256 KiB; or 1,024 of 1 KiB in 256-byte pieces, one call a whole cycle, four turns of a piece of each message), each after idling: throughput::update_each, then throughput::finalize_each for the messages that ended in it"),
-    (Algorithm::Blake3ServilMt, UseCase::InterleavedTurn, "the Hashers of the open messages (256 in pieces up to 16 KiB, one call of turns of up to 64 pieces, 256 KiB; or 1,024 of 1 KiB in 256-byte pieces, one call a whole cycle, four turns of a piece of each message), each after other work: throughput::update_each_multithreaded, then throughput::finalize_each for the messages that ended in it"),
-    (Algorithm::Blake3ServilMt, UseCase::IdleInterleavedTurn, "the Hashers of the open messages (256 in pieces up to 16 KiB, one call of turns of up to 64 pieces, 256 KiB; or 1,024 of 1 KiB in 256-byte pieces, one call a whole cycle, four turns of a piece of each message), each after idling: throughput::update_each_multithreaded, then throughput::finalize_each for the messages that ended in it"),
+    (Algorithm::Blake3ServilMt, UseCase::InterleavedTurn, "the open messages (256 in pieces up to 16 KiB, one call of turns of up to 64 pieces, 256 KiB; or 1,024 of 1 KiB in 256-byte pieces, one call a whole cycle, four turns of a piece of each message), each after other work: throughput::Pipeline kept per producer (twice the open messages in message slots, and as many Rooms of 64 KiB and 16 more); a Room per open message whatever its length, each arriving piece read straight into it, a full Room committed, what is left committed when the message ends; every ended message's Hashed event consumed before the call returns"),
+    (Algorithm::Blake3ServilMt, UseCase::IdleInterleavedTurn, "the open messages (256 in pieces up to 16 KiB, one call of turns of up to 64 pieces, 256 KiB; or 1,024 of 1 KiB in 256-byte pieces, one call a whole cycle, four turns of a piece of each message), each after idling: throughput::Pipeline kept per producer (twice the open messages in message slots, and as many Rooms of 64 KiB and 16 more); a Room per open message whatever its length, each arriving piece read straight into it, a full Room committed, what is left committed when the message ends; every ended message's Hashed event consumed before the call returns"),
     (Algorithm::Blake3ServilSt, UseCase::MerkleTree, "throughput::hash_many(Mode::Keyed(key), &Batch::from_blocks(layer, len), out) for each layer, a tree a sample: the leaves (256 B) written into a kept buffer and hashed under the leaf key, then each layer of parents (64 B, two children's digests) under the parent key into a kept buffer of its own, to the root; leaves of 32 or 16 bytes written into a kept Packed of their length and hashed as they are, each layer's digests into a kept Packed<32>, two by two the next layer's parents (as_blocks), with no copy into blocks"),
     (Algorithm::Blake3ServilMt, UseCase::MerkleTree, "throughput::hash_many_multithreaded(Mode::Keyed(key), &Batch::from_blocks(layer, len), out) for each layer, a tree a sample: the leaves (256 B) written into a kept buffer and hashed under the leaf key, then each layer of parents (64 B, two children's digests) under the parent key into a kept buffer of its own, to the root; leaves of 32 or 16 bytes written into a kept Packed of their length and hashed as they are, each layer's digests into a kept Packed<32>, two by two the next layer's parents (as_blocks), with no copy into blocks"),
     (Algorithm::Blake3ServilSt, UseCase::OneMessage, "convenience::hash(input), each call after other work"),

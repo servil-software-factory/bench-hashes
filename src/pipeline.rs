@@ -5,7 +5,9 @@
 //! drains its results, so samples include completion and reuse starts clean.
 //! The synchronous lent-buffer cells remain the baseline in main.rs.
 
-use blake3_servil::throughput::{block_on, Batch, Block, Event, Limits, Pipeline, Room, ROOM_LEN};
+use blake3_servil::throughput::{
+    block_on, Batch, Block, Event, Limits, Message, Pipeline, Room, ROOM_LEN,
+};
 use blake3_servil::Mode;
 use std::cell::RefCell;
 use std::hint::black_box;
@@ -149,6 +151,180 @@ pub(crate) fn receive(
 }
 
 type BatchBuffers = (Batch<'static>, Box<[[u8; 32]]>);
+
+/// One open message of a turn cell (many messages at once, their pieces
+/// arriving interleaved), as the Pipeline's caller holds it: the message,
+/// and a Room of its own that arrivals land in. The caller knows no
+/// lengths, so a message of any length is served the same way: a full
+/// Room is committed, and what is left when the message ends is its last
+/// commit.
+pub(crate) struct TurnSlot {
+    message: Option<Message>,
+    room: Option<Room>,
+    filled: usize,
+}
+
+impl TurnSlot {
+    pub(crate) fn new() -> Self {
+        Self {
+            message: None,
+            room: None,
+            filled: 0,
+        }
+    }
+}
+
+impl Drop for TurnSlot {
+    /// The turn cells keep their messages open from call to call for the
+    /// producer's life. An open `Message` must be ended or aborted, never
+    /// dropped; at the thread's end it is left as it is (the process ends).
+    fn drop(&mut self) {
+        if let Some(message) = self.message.take() {
+            std::mem::forget(message);
+        }
+    }
+}
+
+/// A turn schedule's Pipeline, kept for its producer's life (its messages
+/// stay open between calls, so it is never dropped).
+struct Turns {
+    pipe: Pipeline<()>,
+    /// Messages ended whose event is not yet taken.
+    pending: usize,
+    open: usize,
+}
+
+thread_local! {
+    /// Kept by contender and schedule, as the schedules themselves are.
+    static TURNS: RefCell<Vec<((&'static str, &'static str), std::mem::ManuallyDrop<Turns>)>> = const { RefCell::new(Vec::new()) };
+}
+
+fn with_turns<R>(
+    key: (&'static str, &'static str),
+    open: usize,
+    f: impl FnOnce(&mut Turns) -> R,
+) -> R {
+    let mut turns = TURNS
+        .with(|all| {
+            let mut all = all.borrow_mut();
+            all.iter()
+                .position(|(k, _)| *k == key)
+                .map(|i| all.swap_remove(i).1)
+        })
+        .unwrap_or_else(|| {
+            std::mem::ManuallyDrop::new(Turns {
+                // As many messages again may be in the workers' hands or
+                // waiting as events, and as many Rooms: `turn_finish` keeps
+                // the ended messages at or under `open`, so opening a
+                // message never waits.
+                pipe: Pipeline::new(
+                    Mode::Plain,
+                    Limits {
+                        messages: 2 * open,
+                        rooms: 2 * open + 16,
+                    },
+                ),
+                pending: 0,
+                open,
+            })
+        });
+    let result = f(&mut turns);
+    TURNS.with(|all| all.borrow_mut().push((key, turns)));
+    result
+}
+
+impl Turns {
+    fn take(&mut self, consume: &mut dyn FnMut(&[u8])) {
+        let Event::Hashed {
+            hash, owner: None, ..
+        } = completed(&mut self.pipe)
+        else {
+            panic!("a room-fed message supplies one hash");
+        };
+        consume(hash.as_bytes());
+        self.pending -= 1;
+    }
+}
+
+/// A turn's arrivals: each piece is read straight into its message's Room
+/// (the one copy every contender pays for an arrival), and a Room that
+/// fills is committed.
+pub(crate) fn turn_update(
+    key: (&'static str, &'static str),
+    slots: &mut [TurnSlot],
+    arriving: &[(usize, &[u8])],
+) {
+    with_turns(key, slots.len(), |turns| {
+        for &(slot, mut piece) in arriving {
+            let slot = &mut slots[slot];
+            if slot.message.is_none() {
+                slot.message = Some(block_on(turns.pipe.message((), None)));
+            }
+            while !piece.is_empty() {
+                let room = slot.room.get_or_insert_with(|| block_on(turns.pipe.room()));
+                let n = piece.len().min(ROOM_LEN - slot.filled);
+                room.bytes_mut()[slot.filled..slot.filled + n].copy_from_slice(&piece[..n]);
+                slot.filled += n;
+                piece = &piece[n..];
+                if slot.filled == ROOM_LEN {
+                    turns
+                        .pipe
+                        .commit(slot.message.as_mut().unwrap(), room, ROOM_LEN);
+                    slot.room = None;
+                    slot.filled = 0;
+                }
+            }
+        }
+    });
+}
+
+/// The messages that ended in a turn: what is left in each one's Room is
+/// its last commit, and the message is ended. Digests are consumed as they
+/// are ready, and by waiting once more ended messages are outstanding than
+/// the schedule holds open.
+pub(crate) fn turn_finish(
+    key: (&'static str, &'static str),
+    slots: &mut [TurnSlot],
+    ended: &[usize],
+    consume: &mut dyn FnMut(&[u8]),
+) {
+    with_turns(key, slots.len(), |turns| {
+        for &slot in ended {
+            let slot = &mut slots[slot];
+            let mut message = slot.message.take().expect("an ended message had a piece");
+            if let Some(mut room) = slot.room.take() {
+                turns.pipe.commit(&mut message, &mut room, slot.filled);
+                slot.filled = 0;
+            }
+            turns.pipe.end(message);
+            turns.pending += 1;
+        }
+        while let Some(event) = turns.pipe.next_event() {
+            let Event::Hashed { hash, .. } = event else {
+                panic!("a room-fed message supplies one hash");
+            };
+            consume(hash.as_bytes());
+            turns.pending -= 1;
+        }
+        while turns.pending > turns.open {
+            turns.take(consume);
+        }
+    });
+}
+
+/// Before a call returns: every ended message's digest consumed, so each
+/// sample holds its own completions.
+pub(crate) fn turn_drain(
+    key: (&'static str, &'static str),
+    open: usize,
+    consume: &mut dyn FnMut(&[u8]),
+) {
+    with_turns(key, open, |turns| {
+        while turns.pending > 0 {
+            turns.take(consume);
+        }
+    });
+}
 
 struct Batches {
     pipe: Pipeline<()>,
@@ -355,6 +531,86 @@ mod tests {
                 job.join().unwrap();
             }
         });
+    }
+
+    #[test]
+    fn turns_hash_each_message_whatever_its_length_across_calls_and_rooms() {
+        start();
+        // Messages shorter than a piece, of several Rooms, and ending on a
+        // Room's last byte; pieces that straddle Rooms; two calls, the
+        // messages open between them.
+        let lengths = [64usize, 1000, ROOM_LEN, 3 * ROOM_LEN + 7, 100_000, 5];
+        let inputs: Vec<Vec<u8>> = lengths
+            .iter()
+            .enumerate()
+            .map(|(i, &len)| (0..len).map(|j| (i * 31 + j * 7) as u8).collect())
+            .collect();
+        let key = ("turn-test", "lengths");
+        let mut slots: Vec<TurnSlot> = lengths.iter().map(|_| TurnSlot::new()).collect();
+        let mut sent = vec![0usize; lengths.len()];
+        let mut digests: Vec<[u8; 32]> = Vec::new();
+        let piece = 40_000;
+        for call in 0..2 {
+            loop {
+                let mut arriving: Vec<(usize, &[u8])> = Vec::new();
+                let mut ended = Vec::new();
+                for (i, input) in inputs.iter().enumerate() {
+                    // The first call stops halfway through each message.
+                    let until = if call == 0 {
+                        input.len() / 2
+                    } else {
+                        input.len()
+                    };
+                    let n = piece.min(until - sent[i]);
+                    if n > 0 {
+                        arriving.push((i, &input[sent[i]..sent[i] + n]));
+                        sent[i] += n;
+                        if sent[i] == input.len() {
+                            ended.push(i);
+                        }
+                    }
+                }
+                if arriving.is_empty() {
+                    break;
+                }
+                turn_update(key, &mut slots, &arriving);
+                turn_finish(key, &mut slots, &ended, &mut |d| {
+                    digests.push(d.try_into().unwrap())
+                });
+            }
+            turn_drain(key, slots.len(), &mut |d| {
+                digests.push(d.try_into().unwrap())
+            });
+        }
+        let mut want: Vec<[u8; 32]> = inputs
+            .iter()
+            .map(|input| *blake3_servil::convenience::hash(input).as_bytes())
+            .collect();
+        want.sort();
+        digests.sort();
+        assert_eq!(digests, want);
+        // The slots are reused: a second message through each.
+        let again: Vec<(usize, &[u8])> = inputs
+            .iter()
+            .enumerate()
+            .map(|(i, m)| (i, &m[..5]))
+            .collect();
+        let all: Vec<usize> = (0..inputs.len()).collect();
+        let mut second = Vec::new();
+        turn_update(key, &mut slots, &again);
+        turn_finish(key, &mut slots, &all, &mut |d| {
+            second.push(<[u8; 32]>::try_from(d).unwrap())
+        });
+        turn_drain(key, slots.len(), &mut |d| {
+            second.push(d.try_into().unwrap())
+        });
+        assert_eq!(second.len(), inputs.len());
+        for (i, input) in inputs.iter().enumerate() {
+            assert!(
+                second.contains(blake3_servil::convenience::hash(&input[..5]).as_bytes()),
+                "message {i}"
+            );
+        }
     }
 
     #[test]

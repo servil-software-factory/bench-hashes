@@ -121,6 +121,16 @@ BLAKE3-Servil mt, `Digest::update` in sha2, sha1-checked, and sha3,
 ring's `Context::update`, CommonCrypto's `CC_SHA256_Update`). The time
 is per byte of pieces.
 
+A turn of those pieces after a gap (the turn cells, at this schedule and
+at 1,024 open messages of 1 KiB in 256-byte pieces) is measured two ways
+for BLAKE3-Servil. Its single-threaded form calls `throughput::update_each`
+on the open messages' Hashers. Its multithreaded form serves the same
+arrivals through a `throughput::Pipeline`, as a caller that knows no
+lengths writes it: a Room (64 KiB) per open message, each arriving piece
+read straight into it, a full Room committed, and what is left committed
+when the message ends. Every ended message's digest is consumed before
+the call returns.
+
 ## Short messages through an incremental API
 
 These cells measure an incremental hasher's complete lifetime at 64 B,
@@ -441,6 +451,14 @@ The participating contenders in each use case run in a Williams design.
 That schedule places every contender in every position equally often and
 realises every "Y right after X" adjacency equally often (n orders for an
 even count of contenders, 2n for odd). Point order rotates independently.
+A contender's call after idling finds in the processor's caches what the
+contenders measured before it left there, so its time depends on which
+contenders take part: with two (a `check`'s BLAKE3-Servil st and mt), each
+always follows the other. BLAKE3-Servil st's turn of the 256-message
+schedule after idling read 4% to 8% slower beside an mt contender that
+runs a Pipeline than beside one that shared st's receive buffer, and level
+when st ran alone under both (a Ryzen 9700X and an EPYC 9255, November 22,
+2026). Compare a cell between runs of the same contenders.
 Each calling pattern has its own calibration and rounds: nonstop,
 after other work, brief idle, long idle, controlled idle, and receiving. Because the operating system sets a core's clock from
 the program's recent activity, each calling pattern runs among its own
