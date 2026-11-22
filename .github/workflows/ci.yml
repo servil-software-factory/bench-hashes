@@ -16,26 +16,26 @@ jobs:
       # Line tables name the code in a stack trace; the code is the same.
       CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Assignee workflow controls
         run: python3 tools/test_one_assignee.py
       - name: Pinned runner and fault controls
         if: runner.os == 'Linux'
         run: python3 tools/pinned-run/check.py --output "${{ runner.temp }}/pinned-run-check"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always() && runner.os == 'Linux'
         with:
           name: pinned-run-check-${{ matrix.os }}
           path: ${{ runner.temp }}/pinned-run-check/
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
           # check's coverage uses the toolchain's llvm-profdata and llvm-cov,
           # and a test holds that it takes them (check::tests).
           components: llvm-tools
-      - uses: taiki-e/install-action@nextest
-      - run: cargo build --release
+      - uses: taiki-e/install-action@2b545d4fd42fdd72ed2a44eab8fedd1850e8f731 # nextest
+      - run: cargo build --release --locked
       # Each test in its own process (AGENTS: "Tests run under nextest").
-      - run: cargo nextest run --release
+      - run: cargo nextest run --release --locked
       # The default suite checks the instrument's logic. The machine
       # profile runs on quiet benchmark hosts; hosted macOS CI has shown
       # 1.68-3.01 CPUs of unrelated work, which invalidates its load checks.
@@ -45,7 +45,7 @@ jobs:
       - name: A quick run
         shell: bash
         run: |
-          if [ "$RUNNER_OS" != Linux ]; then exec cargo run --release -- --quick; fi
+          if [ "$RUNNER_OS" != Linux ]; then exec cargo run --release --locked -- --quick; fi
           sudo apt-get update -qq
           sudo apt-get install -y -qq gdb > /dev/null
           ./target/release/bench-hashes --quick & pid=$!
@@ -54,7 +54,7 @@ jobs:
           sudo gdb -p $pid -batch -ex "thread apply all bt" 2>&1 | grep -v '^\[New LWP'
           kill $pid
           exit 1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: results-${{ matrix.os }}
