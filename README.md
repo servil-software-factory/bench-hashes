@@ -21,6 +21,10 @@ away from there; four of the nine:
 - [Intel i7-12700K, Linux](https://servil-software-factory.github.io/bench-hashes/benchmark-results/12thGenIntelRCoreTMi712700K.linux70042generic/bench-hashes.map.html)
 - [A Linux VM on that Mac](https://servil-software-factory.github.io/bench-hashes/benchmark-results/aarch64.linux618520virt/bench-hashes.map.html)
 
+## Release benchmarks
+
+- [BLAKE3-Servil 0.10.0](releases/servil-0.10.0/README.md): `b3sum` against official `b3sum` 1.8.7 and 0.9.1, and the library against 0.9.1, across seven machines.
+
 ## Run it on your computer
 
 You need [Rust](https://rustup.rs) and a C compiler: Xcode's command-line
