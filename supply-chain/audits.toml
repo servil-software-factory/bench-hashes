@@ -1,26 +1,4 @@
 
 # cargo-vet audits file
 
-[[audits.arrayvec]]
-who = "Devon Jonte <devonjonte@users.noreply.github.com>"
-criteria = "safe-to-deploy"
-delta = "0.7.6 -> 0.7.8"
-notes = "Fixes ZST double-free in extend via mem::forget, adds safe spare_capacity_mut, 16-bit LenUint, and lifetime annotations."
-
-[[audits.crypto-common]]
-who = "Devon Jonte <devonjonte@users.noreply.github.com>"
-criteria = "safe-to-deploy"
-delta = "0.1.6 -> 0.1.7"
-notes = "Manifest-only change pinning generic-array =0.14.7; zero source changes."
-
-[[audits.sha1]]
-who = "Devon Jonte <devonjonte@users.noreply.github.com>"
-criteria = "safe-to-deploy"
-delta = "0.10.6 -> 0.10.7"
-notes = "Removes optional sha1-asm dependency and aarch64 asm wrapper, adds doc example."
-
-[[audits.version_check]]
-who = "Devon Jonte <devonjonte@users.noreply.github.com>"
-criteria = "safe-to-deploy"
-delta = "0.9.4 -> 0.9.5"
-notes = "Doc-comment and Cargo.toml metadata changes only; zero executable code changes."
+[audits]
