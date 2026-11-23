@@ -1,12 +1,16 @@
 # Supply-chain dependency policy for bench-hashes (BLAKE3 #479).
-# Checked in CI via `cargo deny check` with a hash-verified cargo-deny binary.
+# Checked in CI via `python3 tools/dependency_policy.py`.
 
 [graph]
-all-features = false
+all-features = true
 
 [advisories]
 version = 2
 yanked = "deny"
+# Wherever the package is in the graph. Left unset, these two look at
+# direct dependencies alone.
+unsound = "all"
+unmaintained = "all"
 
 [bans]
 multiple-versions = "allow"
@@ -20,11 +24,17 @@ allow-git = ["https://github.com/servil-software-factory/BLAKE3"]
 
 [licenses]
 version = 2
+# The packages that only tests use are held to the list too.
+include-dev = true
 allow = [
     "MIT",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
     "ISC",
     "CC0-1.0",
+    "TGPPL-1.0",
 ]
+# BOSL-1.0 is welcome too (Zooko, November 23, 2026). SPDX has no name for
+# it, so cargo-deny cannot read it in this list: a crate under it gets a
+# `clarify` entry here when one arrives.
 confidence-threshold = 0.8

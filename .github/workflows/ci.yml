@@ -79,7 +79,7 @@ jobs:
           tar Jxf /tmp/cargo-vet.tar.xz -C /tmp --strip-components=1 --wildcards '*/cargo-vet'
           install -m 755 /tmp/cargo-vet ~/.cargo/bin/cargo-vet
           rm -f /tmp/cargo-vet.tar.xz /tmp/cargo-vet
-      - name: Check advisories, bans, licenses, and sources
-        run: cargo deny check
-      - name: Check dependency audits (cargo-vet --locked)
-        run: cargo vet --locked
+      - name: Check path allowlist, cargo-deny, and cargo-vet
+        run: |
+          python3 tools/test_dependency_policy.py
+          python3 tools/dependency_policy.py
