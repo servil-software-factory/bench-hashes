@@ -247,8 +247,8 @@ fn watch_repository(repository: &Path) {
 /// Reads the git state of `repository`, leaving out the path `skip` (the
 /// results directory, or this repository nested inside BLAKE3-Servil's
 /// checkout, where it is an untracked directory). A dirty tree is fingerprinted by hashing its status, its
-/// diff against HEAD, and every untracked file, with BLAKE3, the hash written as a sigil
-/// (`dirty-` and 25 letters: johnservil/sigil 0.1).
+/// diff against HEAD, and every untracked file, with BLAKE3, written as
+/// `dirty-` and 64 lowercase hex characters.
 fn git_state(repository: &Path, skip: &[&str]) -> GitState {
     let source = normalize_git_source(&git_text(repository, &["remote", "get-url", "origin"]));
 

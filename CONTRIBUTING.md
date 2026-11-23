@@ -206,9 +206,7 @@ to `clocks/` is a change to this repository, its tests among the ones
   optimized away (`black_box`).
 - **Results name their code.** Commit before you publish a result: a
   report whose provenance says `dirty-…` (the uncommitted changes' BLAKE3
-  hash, as a sigil) measured uncommitted code. Sigil's Python module
-  turns one into hex: `python3 -c 'import sys, sigilcode; print(sigilcode.decode(sys.argv[1], 32).hex())' SIGIL`,
-  from a checkout of johnservil/sigil's `python/`.
+  hash, in lowercase hex) measured uncommitted code.
 - **BLAKE3-Servil's regression check runs `bench-hashes regress OLD... -- NEW...`**,
   which runs the two executables with `--contenders`, `--points`, and
   `--rounds` and reads their samples files: the rule lives here, so a

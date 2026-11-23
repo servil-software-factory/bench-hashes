@@ -194,7 +194,7 @@ def a_disallowed_git_source(stage):
 def a_crate_taken_by_path(stage):
     repo = stage / "repo"
     _write_path_crate(repo / "copied", "copied", "MIT")
-    edit(repo / "Cargo.toml", r'^\[dependencies\.wyhash\]\n', '[dependencies.copied]\npath = "copied"\n\n[dependencies.wyhash]\n')
+    edit(repo / "Cargo.toml", r'^\[dependencies\.sha2\]\n', '[dependencies.copied]\npath = "copied"\n\n[dependencies.sha2]\n')
     subprocess.run(["cargo", "metadata", "--format-version", "1"], cwd=repo, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
@@ -204,13 +204,15 @@ def a_dev_only_gpl_crate_outside(stage):
     repo = stage / "repo"
     outside = stage / "outside-dev-gpl"
     _write_path_crate(outside, "outside-dev-gpl", "GPL-3.0-only")
-    edit(repo / "Cargo.toml", r'^\[dev-dependencies\.sigilcode\]\n',
-         f'[dev-dependencies.outside-dev-gpl]\npath = "{outside.resolve()}"\n\n[dev-dependencies.sigilcode]\n')
+    manifest = repo / "Cargo.toml"
+    manifest.write_text(
+        manifest.read_text() + f'\n[dev-dependencies.outside-dev-gpl]\npath = "{outside.resolve()}"\n'
+    )
     subprocess.run(["cargo", "metadata", "--format-version", "1"], cwd=repo, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def an_unaudited_crate(stage):
-    strip_audit_evidence(stage / "repo", "wyhash")
+    strip_audit_evidence(stage / "repo", "sha2")
 
 
 def unreadable_yank_status(stage):

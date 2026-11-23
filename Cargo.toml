@@ -14,15 +14,6 @@ version = "1"
 default-features = false
 features = ["std", "rayon"]
 
-# Seeded hashing for every map (crate::Map): runs lay out alike.
-[dependencies.wyhash]
-version = "0.6"
-
-# Machine metadata does not need sysinfo's multithread feature.
-[dependencies.sysinfo]
-version = "0.30"
-default-features = false
-
 # sha2 0.11 carries its own hardware backends (ARMv8 SHA-256 instructions,
 # x86 SHA-NI) with runtime detection, on every target.
 [dependencies.sha2]
@@ -70,20 +61,12 @@ diag-align64 = []
 diag-line-offset = []
 
 [build-dependencies]
-# Used to fingerprint a dirty benchmark working tree: its BLAKE3 hash,
-# written as a sigil (johnservil/sigil 0.1: `dirty-` and 25 letters for 256
-# bits, no two alike, selected whole by a double-click).
+# Used to fingerprint a dirty benchmark working tree: its BLAKE3 hash
+# (`dirty-` and 64 lowercase hex characters).
 [build-dependencies.blake3]
 version = "1"
 default-features = false
 features = ["std"]
-
-[build-dependencies.sigilcode]
-version = "=0.1.0+81af550bfd3eb2aff85c3ddf0a21446e78a1809d"
-
-# A test reads the sigil back (main.rs, the clean status).
-[dev-dependencies.sigilcode]
-version = "=0.1.0+81af550bfd3eb2aff85c3ddf0a21446e78a1809d"
 
 [profile.release]
 opt-level = 3

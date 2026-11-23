@@ -8,7 +8,6 @@ use std::fs;
 use std::hint::black_box;
 use std::io::{IsTerminal, Write as _};
 use std::time::{SystemTime, UNIX_EPOCH};
-use sysinfo::{CpuRefreshKind, RefreshKind, System};
 
 #[cfg(target_arch = "wasm32")]
 compile_error!("bench-hashes currently supports native targets only");
@@ -3078,8 +3077,7 @@ fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
 /// Hash maps and sets with one fixed seed, in place of std's per-process
 /// random one: a run's tables, their growth and their iteration order, are
 /// the same in every run, so neither a measurement nor its report differs
-/// by a draw. WyHash, as zooko/smalloc's devutils hashes: seeded and fast.
-/// Every map in the bench is one of these (the test
+/// by a draw. Every map in the bench is one of these (the test
 /// `every_map_is_seeded` keeps it so).
 pub(crate) type Map<K, V> = std::collections::HashMap<K, V, Seeded>;
 pub(crate) type Set<K> = std::collections::HashSet<K, Seeded>;
@@ -3087,10 +3085,55 @@ pub(crate) type Set<K> = std::collections::HashSet<K, Seeded>;
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Seeded;
 
+/// Deterministic 64-bit hasher using 128-bit multiply-xor mixing over 8-byte
+/// chunks so map layouts stay reproducible across runs without external crates.
+#[derive(Clone, Copy)]
+pub(crate) struct SeededHasher {
+    state: u64,
+}
+
+impl SeededHasher {
+    const SEED: u64 = 0x6A09_E667_F3BC_C908;
+    const K0: u64 = 0xA076_1D64_78BD_642F;
+    const K1: u64 = 0xE703_7ED1_A0B4_28DB;
+
+    #[inline]
+    fn mix(a: u64, b: u64) -> u64 {
+        let wide = u128::from(a).wrapping_mul(u128::from(b));
+        (wide as u64) ^ ((wide >> 64) as u64)
+    }
+}
+
+impl std::hash::Hasher for SeededHasher {
+    #[inline]
+    fn finish(&self) -> u64 {
+        Self::mix(self.state ^ Self::K0, Self::K1)
+    }
+
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        let mut state = Self::mix(self.state ^ (bytes.len() as u64), Self::K0);
+        let mut chunks = bytes.chunks_exact(8);
+        for chunk in &mut chunks {
+            let word = u64::from_le_bytes(chunk.try_into().unwrap());
+            state = Self::mix(state ^ word, Self::K1);
+        }
+        let tail = chunks.remainder();
+        if !tail.is_empty() {
+            let mut buf = [0u8; 8];
+            buf[..tail.len()].copy_from_slice(tail);
+            state = Self::mix(state ^ u64::from_le_bytes(buf), Self::K1);
+        }
+        self.state = state;
+    }
+}
+
 impl std::hash::BuildHasher for Seeded {
-    type Hasher = wyhash::WyHash;
-    fn build_hasher(&self) -> wyhash::WyHash {
-        wyhash::WyHash::with_seed(0x6A09_E667_F3BC_C908)
+    type Hasher = SeededHasher;
+    fn build_hasher(&self) -> SeededHasher {
+        SeededHasher {
+            state: SeededHasher::SEED,
+        }
     }
 }
 
@@ -8645,44 +8688,97 @@ fn column_heading(algorithm: Algorithm) -> &'static str {
     }
 }
 
-fn machine_metadata() -> MachineMetadata {
-    // CPUs alone: every process's name (a kworker's changes as it works)
-    // went into the heap before the measurement and moved the buffers
-    // after it to a new offset each run (bench-hashes #65).
-    let system =
-        System::new_with_specifics(RefreshKind::new().with_cpu(CpuRefreshKind::everything()));
+fn parse_linux_cpuinfo(text: &str) -> (Option<String>, usize) {
+    let mut cpu_type: Option<String> = None;
+    let mut cpu_count: usize = 0;
+    for line in text.lines() {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        match key.trim() {
+            "processor" => cpu_count += 1,
+            "model name" if cpu_type.is_none() => {
+                let value = value.trim();
+                if !value.is_empty() {
+                    cpu_type = Some(value.to_owned());
+                }
+            }
+            _ => {}
+        }
+    }
+    (cpu_type, cpu_count)
+}
 
-    let cpus = system.cpus();
-
-    assert!(
-        !cpus.is_empty(),
-        "the operating system must report at least one logical CPU"
-    );
-
-    let cpu_type = cpus
-        .iter()
-        .map(|cpu| cpu.brand().trim())
-        .find(|brand| !brand.is_empty())
-        .unwrap_or(std::env::consts::ARCH)
-        .to_owned();
-
-    let kernel = System::kernel_version().unwrap_or_else(|| "unreported".to_owned());
-
-    let os_type = if std::env::consts::OS == "macos" {
+fn format_os_type(os: &str, kernel: &str) -> String {
+    if os == "macos" {
         let kernel_major = kernel
             .split('.')
             .next()
             .expect("kernel version must have a first component");
-
         format!("darwin{kernel_major}")
     } else {
-        format!("{}{}", std::env::consts::OS, kernel)
+        format!("{os}{kernel}")
+    }
+}
+
+fn sysctl_value(key: &str) -> Option<String> {
+    let out = std::process::Command::new("sysctl")
+        .args(["-n", key])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let value = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    (!value.is_empty()).then_some(value)
+}
+
+fn available_cpus() -> usize {
+    std::thread::available_parallelism()
+        .map(std::num::NonZeroUsize::get)
+        .unwrap_or(0)
+}
+
+fn host_cpu_and_kernel() -> (String, usize, String) {
+    // Read CPU brand, logical CPU count, and kernel version directly from the
+    // OS (avoiding process-table scans that shift heap addresses, #65).
+    let (cpu_type, cpu_count, kernel) = if cfg!(target_os = "macos") {
+        let brand = sysctl_value("machdep.cpu.brand_string")
+            .unwrap_or_else(|| std::env::consts::ARCH.to_owned());
+        let count = sysctl_value("hw.logicalcpu")
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or_else(available_cpus);
+        let kernel = sysctl_value("kern.osrelease").unwrap_or_else(|| "unreported".to_owned());
+        (brand, count, kernel)
+    } else {
+        let (brand, count) = fs::read_to_string("/proc/cpuinfo")
+            .map(|text| parse_linux_cpuinfo(&text))
+            .unwrap_or((None, 0));
+        let brand = brand.unwrap_or_else(|| std::env::consts::ARCH.to_owned());
+        let count = if count > 0 { count } else { available_cpus() };
+        let kernel = fs::read_to_string("/proc/sys/kernel/osrelease")
+            .ok()
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "unreported".to_owned());
+        (brand, count, kernel)
     };
+
+    assert!(
+        cpu_count > 0,
+        "the operating system must report at least one logical CPU"
+    );
+
+    (cpu_type, cpu_count, format_os_type(std::env::consts::OS, &kernel))
+}
+
+fn machine_metadata() -> MachineMetadata {
+    let (cpu_type, cpu_count, os_type) = host_cpu_and_kernel();
 
     MachineMetadata {
         timestamp: utc_timestamp(),
         cpu_type,
-        cpu_count: cpus.len(),
+        cpu_count,
         os_type,
         cpu_identity: cpu_identity(),
         idle_states: idle_states(),
@@ -9096,14 +9192,8 @@ fn cpu_identity() -> String {
             "hw.perflevel0.physicalcpu",
             "hw.perflevel1.physicalcpu",
         ] {
-            if let Ok(out) = std::process::Command::new("sysctl")
-                .args(["-n", key])
-                .output()
-            {
-                let value = String::from_utf8_lossy(&out.stdout).trim().to_owned();
-                if out.status.success() && !value.is_empty() {
-                    parts.push(format!("{key}: {value}"));
-                }
+            if let Some(value) = sysctl_value(key) {
+                parts.push(format!("{key}: {value}"));
             }
         }
     }
@@ -9406,15 +9496,15 @@ mod correctness_tests {
 
     include!("fingerprint.rs");
 
-    /// The fingerprint build.rs writes, on a fixed hash: Sigil's own vector,
-    /// BLAKE3 of the empty input (johnservil/sigil's README), and it reads
-    /// back to the same bytes.
+    /// The fingerprint build.rs writes, on a fixed hash: BLAKE3 of the empty
+    /// input in 64 lowercase hex characters.
     #[test]
-    fn a_fingerprint_is_the_sigil_of_the_hash() {
+    fn a_fingerprint_is_the_hex_of_the_hash() {
         let hash = *blake3::hash(b"").as_bytes();
-        assert_eq!(fingerprint(&hash), "dirty-ᢳᕌᔃጾዿᑂഔጕꔍⶰᣟꕄꕛቴⴲజᐽᙿᕯⶂጁᑃሃᛜጩ");
-        let sigil = fingerprint(&hash)["dirty-".len()..].to_owned();
-        assert_eq!(sigilcode::decode(&sigil, 32).unwrap(), hash);
+        assert_eq!(
+            fingerprint(&hash),
+            "dirty-af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        );
     }
 
     /// This build's own status: `clean`, or a fingerprint (above) that
@@ -9461,12 +9551,59 @@ mod correctness_tests {
     }
 
     #[test]
-    fn a_dirty_status_is_a_sigil_of_its_hash() {
-        if let Some(sigil) = GIT_CLEAN_STATUS.strip_prefix("dirty-") {
-            assert_eq!(sigil.chars().count(), 25, "{GIT_CLEAN_STATUS}");
-            assert_eq!(sigilcode::decode(sigil, 32).map(|d| d.len()), Ok(32));
+    fn a_dirty_status_is_hex_of_its_hash() {
+        if let Some(hex) = GIT_CLEAN_STATUS.strip_prefix("dirty-") {
+            assert_eq!(hex.len(), 64, "{GIT_CLEAN_STATUS}");
+            assert!(
+                hex.bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+                "{GIT_CLEAN_STATUS}"
+            );
         } else {
             assert_eq!(GIT_CLEAN_STATUS, "clean");
+        }
+    }
+
+    #[test]
+    fn seeded_hasher_is_deterministic_and_sensitive() {
+        use std::hash::{BuildHasher, Hasher};
+        let hash_of = |parts: &[&[u8]]| {
+            let mut h = Seeded.build_hasher();
+            for p in parts {
+                h.write(p);
+            }
+            h.finish()
+        };
+        assert_eq!(hash_of(&[b"blake3-servil"]), hash_of(&[b"blake3-servil"]));
+        assert_ne!(hash_of(&[b"a"]), hash_of(&[b"a\0"]));
+        assert_ne!(hash_of(&[b"ab", b"c"]), hash_of(&[b"a", b"bc"]));
+        assert_ne!(
+            hash_of(&[b"0123456789abcdef"]),
+            hash_of(&[b"0123456789abcdee"])
+        );
+    }
+
+    #[test]
+    fn parse_linux_cpuinfo_and_os_type_match_hosts() {
+        let x86 = "processor\t: 0\nmodel name\t: AMD EPYC 9255 24-Core Processor\n\nprocessor\t: 1\nmodel name\t: AMD EPYC 9255 24-Core Processor\n";
+        assert_eq!(
+            parse_linux_cpuinfo(x86),
+            (Some("AMD EPYC 9255 24-Core Processor".to_owned()), 2)
+        );
+        let arm = "processor\t: 0\nCPU implementer\t: 0xc0\n\nprocessor\t: 1\nCPU implementer\t: 0xc0\n";
+        assert_eq!(parse_linux_cpuinfo(arm), (None, 2));
+        assert_eq!(format_os_type("macos", "25.4.0"), "darwin25");
+        assert_eq!(
+            format_os_type("linux", "7.0.0-43-generic"),
+            "linux7.0.0-43-generic"
+        );
+        let (cpu, count, os) = host_cpu_and_kernel();
+        assert!(!cpu.is_empty());
+        assert!(count > 0);
+        if cfg!(target_os = "macos") {
+            assert!(os.starts_with("darwin"), "{os}");
+        } else if cfg!(target_os = "linux") {
+            assert!(os.starts_with("linux") && !os.ends_with("unreported"), "{os}");
         }
     }
 
