@@ -31,7 +31,8 @@ jobs:
         # check's coverage uses the toolchain's llvm-profdata and llvm-cov,
         # and a test holds that it takes them (check::tests).
         run: sh tools/ci-rust.sh llvm-tools
-      - uses: taiki-e/install-action@2b545d4fd42fdd72ed2a44eab8fedd1850e8f731 # nextest
+      - name: Install hash-verified cargo-nextest 0.9.152
+        run: sh tools/ci-nextest.sh
       - run: cargo build --release --locked
       # Each test in its own process (AGENTS: "Tests run under nextest").
       - run: cargo nextest run --release --locked
