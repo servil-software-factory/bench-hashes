@@ -11,220 +11,96 @@ use super::{read_samples, Algorithm, UseCase, POINTS, SHOWN_AT_FIRST};
 use std::fmt::Write as _;
 use std::path::Path;
 
-/// Where each use case sits: its row, its column, the call of BLAKE3
-/// servil mt (the servil contender shown when the page opens), and that
-/// call's page in the documentation.
 /// BLAKE3-Servil st's call where `place` names mt's, in map column
 /// `column`: the convenience call for one message after a gap,
 /// `throughput::hash` for one after another, and elsewhere the call
 /// without its `_multithreaded`.
-fn one_thread_call(column: &str, call: &str, doc: &str) -> (String, String) {
+fn one_thread_call(column: &str, call: &str) -> String {
     if call.starts_with("throughput::Pipeline") {
         return match column {
-            "receiving" => (
-                "convenience::Hasher::update".to_owned(),
-                "convenience/struct.Hasher.html#method.update".to_owned(),
-            ),
-            "piped" if call.ends_with("::batch") => (
-                "throughput::hash_many".to_owned(),
-                "throughput/fn.hash_many.html".to_owned(),
-            ),
-            "piped" => (
-                "throughput::hash".to_owned(),
-                "throughput/fn.hash.html".to_owned(),
-            ),
+            "receiving" => "convenience::Hasher::update",
+            "piped" if call.ends_with("::batch") => "throughput::hash_many",
+            "piped" => "throughput::hash",
             // A turn of many open messages' pieces.
-            "busy" | "idle" | "brief" | "controlled" => (
-                "throughput::update_each".to_owned(),
-                "performance/fn.update_each.html".to_owned(),
-            ),
+            "busy" | "idle" | "brief" | "controlled" => "throughput::update_each",
             _ => unreachable!("Pipeline serves owned, receiving and turn cells"),
-        };
+        }
+        .to_owned();
     }
     if call == "throughput::hash_multithreaded" {
         return if matches!(column, "lent" | "piped") {
-            (
-                "throughput::hash".to_owned(),
-                doc.replace("fn.hash_multithreaded", "fn.hash"),
-            )
+            "throughput::hash"
         } else {
-            (
-                "convenience::hash".to_owned(),
-                "convenience/fn.hash.html".to_owned(),
-            )
-        };
+            "convenience::hash"
+        }
+        .to_owned();
     }
-    if call == "throughput::Hasher::update_multithreaded" {
-        return (
-            "convenience::Hasher::update".to_owned(),
-            "convenience/struct.Hasher.html#method.update".to_owned(),
-        );
+    call.replace("_multithreaded", "")
+}
+
+/// A call's page in BLAKE3-Servil's documentation, under `DOCS`, from the
+/// call's name: `MODULE::function` has `MODULE/fn.function.html`,
+/// `MODULE::Type` has `MODULE/struct.Type.html`, and `MODULE::Type::method`
+/// is on its type's page at `#method.method`. Computed, so a call's name
+/// and its link cannot disagree.
+fn doc_page(call: &str) -> String {
+    let mut names = call.split("::");
+    let module = names.next().expect("a call names its module");
+    let item = names.next().expect("a call names an item of its module");
+    if !item.starts_with(char::is_uppercase) {
+        return format!("{module}/fn.{item}.html");
     }
-    (
-        call.replace("_multithreaded", ""),
-        doc.replace("_multithreaded", ""),
-    )
+    match names.next() {
+        Some(method) => format!("{module}/struct.{item}.html#method.{method}"),
+        None => format!("{module}/struct.{item}.html"),
+    }
 }
 
 /// A use case's row and column on the map, by their ids.
 pub fn row_and_column(use_case: UseCase) -> (&'static str, &'static str) {
-    let (row, column, _, _) = place(use_case);
+    let (row, column, _) = place(use_case);
     (row, column)
 }
 
-fn place(use_case: UseCase) -> (&'static str, &'static str, &'static str, &'static str) {
+/// Where each use case sits: its row, its column, and the call of BLAKE3
+/// servil mt (the servil contender shown when the page opens).
+fn place(use_case: UseCase) -> (&'static str, &'static str, &'static str) {
     match use_case {
-        UseCase::OneMessage => (
-            "one",
-            "busy",
-            "throughput::hash_multithreaded",
-            "performance/fn.hash_multithreaded.html",
-        ),
-        UseCase::IdleOneMessage => (
-            "one",
-            "idle",
-            "throughput::hash_multithreaded",
-            "performance/fn.hash_multithreaded.html",
-        ),
-        UseCase::BriefIdleOneMessage => (
-            "one",
-            "brief",
-            "throughput::hash_multithreaded",
-            "performance/fn.hash_multithreaded.html",
-        ),
-        UseCase::ControlledIdleOneMessage => (
-            "one",
-            "controlled",
-            "throughput::hash_multithreaded",
-            "performance/fn.hash_multithreaded.html",
-        ),
-        UseCase::IncrementalMessage => (
-            "incremental",
-            "busy",
-            "convenience::Hasher",
-            "convenience/struct.Hasher.html",
-        ),
-        UseCase::LentIncrementalMessage => (
-            "incremental",
-            "lent",
-            "convenience::Hasher",
-            "convenience/struct.Hasher.html",
-        ),
-        UseCase::ReceivingMessage => (
-            "one",
-            "receiving",
-            "throughput::Pipeline::commit",
-            "throughput/struct.Pipeline.html#method.commit",
-        ),
-        UseCase::LentMessages => (
-            "one",
-            "lent",
-            "throughput::hash_multithreaded",
-            "performance/fn.hash_multithreaded.html",
-        ),
-        UseCase::ContinuousMessages => (
-            "one",
-            "piped",
-            "throughput::Pipeline::commit",
-            "throughput/struct.Pipeline.html#method.commit",
-        ),
-        UseCase::ManyMessages => (
-            "batch",
-            "busy",
-            "throughput::hash_many_multithreaded",
-            "performance/fn.hash_many_multithreaded.html",
-        ),
-        UseCase::ManyLongMessages => (
-            "long",
-            "busy",
-            "throughput::hash_many_multithreaded",
-            "performance/fn.hash_many_multithreaded.html",
-        ),
-        UseCase::IdleManyMessages => (
-            "batch",
-            "idle",
-            "throughput::hash_many_multithreaded",
-            "performance/fn.hash_many_multithreaded.html",
-        ),
-        UseCase::BriefIdleManyMessages => (
-            "batch",
-            "brief",
-            "throughput::hash_many_multithreaded",
-            "performance/fn.hash_many_multithreaded.html",
-        ),
-        UseCase::ControlledIdleManyMessages => (
-            "batch",
-            "controlled",
-            "throughput::hash_many_multithreaded",
-            "performance/fn.hash_many_multithreaded.html",
-        ),
-        UseCase::LentBatches => (
-            "batch",
-            "lent",
-            "throughput::hash_many_multithreaded",
-            "performance/fn.hash_many_multithreaded.html",
-        ),
-        UseCase::ContinuousBatches => (
-            "batch",
-            "piped",
-            "throughput::Pipeline::batch",
-            "throughput/struct.Pipeline.html#method.batch",
-        ),
-        UseCase::Interleaved => (
-            "many",
-            "lent",
-            "throughput::update_each",
-            "throughput/fn.update_each.html",
-        ),
-        UseCase::InterleavedTurn => (
-            "many",
-            "busy",
-            "throughput::Pipeline",
-            "throughput/struct.Pipeline.html",
-        ),
-        UseCase::IdleInterleavedTurn => (
-            "many",
-            "idle",
-            "throughput::Pipeline",
-            "throughput/struct.Pipeline.html",
-        ),
-        UseCase::BriefIdleInterleavedTurn => (
-            "many",
-            "brief",
-            "throughput::Pipeline",
-            "throughput/struct.Pipeline.html",
-        ),
-        UseCase::ControlledIdleInterleavedTurn => (
-            "many",
-            "controlled",
-            "throughput::Pipeline",
-            "throughput/struct.Pipeline.html",
-        ),
-        UseCase::Collection => (
-            "coll",
-            "lent",
-            "throughput::hash_each_multithreaded",
-            "performance/fn.hash_each_multithreaded.html",
-        ),
-        UseCase::ContinuousCollection => (
-            "coll",
-            "piped",
-            "throughput::Pipeline::commit",
-            "throughput/struct.Pipeline.html#method.commit",
-        ),
-        UseCase::MerkleTree => (
-            "merkle",
-            "lent",
-            "throughput::hash_many_multithreaded",
-            "performance/fn.hash_many_multithreaded.html",
-        ),
+        UseCase::OneMessage => ("one", "busy", "throughput::hash_multithreaded"),
+        UseCase::IdleOneMessage => ("one", "idle", "throughput::hash_multithreaded"),
+        UseCase::BriefIdleOneMessage => ("one", "brief", "throughput::hash_multithreaded"),
+        UseCase::ControlledIdleOneMessage => {
+            ("one", "controlled", "throughput::hash_multithreaded")
+        }
+        UseCase::IncrementalMessage => ("incremental", "busy", "convenience::Hasher"),
+        UseCase::LentIncrementalMessage => ("incremental", "lent", "convenience::Hasher"),
+        UseCase::ReceivingMessage => ("one", "receiving", "throughput::Pipeline::commit"),
+        UseCase::LentMessages => ("one", "lent", "throughput::hash_multithreaded"),
+        UseCase::ContinuousMessages => ("one", "piped", "throughput::Pipeline::commit"),
+        UseCase::ManyMessages => ("batch", "busy", "throughput::hash_many_multithreaded"),
+        UseCase::ManyLongMessages => ("long", "busy", "throughput::hash_many_multithreaded"),
+        UseCase::IdleManyMessages => ("batch", "idle", "throughput::hash_many_multithreaded"),
+        UseCase::BriefIdleManyMessages => ("batch", "brief", "throughput::hash_many_multithreaded"),
+        UseCase::ControlledIdleManyMessages => {
+            ("batch", "controlled", "throughput::hash_many_multithreaded")
+        }
+        UseCase::LentBatches => ("batch", "lent", "throughput::hash_many_multithreaded"),
+        UseCase::ContinuousBatches => ("batch", "piped", "throughput::Pipeline::batch"),
+        UseCase::Interleaved => ("many", "lent", "throughput::update_each"),
+        UseCase::InterleavedTurn => ("many", "busy", "throughput::Pipeline"),
+        UseCase::IdleInterleavedTurn => ("many", "idle", "throughput::Pipeline"),
+        UseCase::BriefIdleInterleavedTurn => ("many", "brief", "throughput::Pipeline"),
+        UseCase::ControlledIdleInterleavedTurn => ("many", "controlled", "throughput::Pipeline"),
+        UseCase::Collection => ("coll", "lent", "throughput::hash_each_multithreaded"),
+        UseCase::ContinuousCollection => ("coll", "piped", "throughput::Pipeline::commit"),
+        UseCase::MerkleTree => ("merkle", "lent", "throughput::hash_many_multithreaded"),
     }
 }
 
 /// The map's address of a use case's chart: `scenario|row|col`, as a link
 /// to `bench-hashes.map.html#…` opens it.
 pub fn cell_key(scenario: &str, use_case: UseCase) -> String {
-    let (row, col, _, _) = place(use_case);
+    let (row, col, _) = place(use_case);
     format!("{scenario}|{row}|{col}")
 }
 
@@ -712,15 +588,15 @@ fn hashing(path: &Path) -> Section {
     algorithms.sort_by_key(|a| Algorithm::ALL.iter().position(|b| b == a));
     let mut cells = Vec::new();
     for use_case in UseCase::ALL {
-        let (_, column, call, doc) = place(use_case);
+        let (_, column, call) = place(use_case);
         // A page without BLAKE3-Servil mt names the one-thread calls.
         let one_thread = !algorithms.contains(&Algorithm::Blake3ServilMt);
-        let (call, doc) = if one_thread {
-            one_thread_call(column, call, doc)
+        let call = if one_thread {
+            one_thread_call(column, call)
         } else {
-            (call.to_owned(), doc.to_owned())
+            call.to_owned()
         };
-        let (call, doc) = (call.as_str(), doc.as_str());
+        let call = call.as_str();
         for scenario in crate::Scenario::ALL.map(|s| s.key()) {
             let points = &POINTS[use_case.points()];
             // Every chart in bytes per second, so one axis serves them all:
@@ -804,7 +680,7 @@ fn hashing(path: &Path) -> Section {
                     sizes: measured.iter().map(|p| p.label.to_owned()).collect(),
                     unit: "GB/s",
                     call: call.to_owned(),
-                    doc: format!("{DOCS}{doc}"),
+                    doc: format!("{DOCS}{}", doc_page(call)),
                     cases: matches!(
                         use_case,
                         UseCase::Interleaved
@@ -1241,34 +1117,28 @@ mod tests {
     #[test]
     fn a_one_thread_page_names_the_one_thread_calls() {
         let call = |use_case| {
-            let (_, column, call, doc) = super::place(use_case);
-            super::one_thread_call(column, call, doc)
+            let (_, column, call) = super::place(use_case);
+            super::one_thread_call(column, call)
         };
-        assert_eq!(call(super::UseCase::OneMessage).0, "convenience::hash");
-        assert_eq!(
-            call(super::UseCase::IdleOneMessage),
-            (
-                "convenience::hash".to_owned(),
-                "convenience/fn.hash.html".to_owned()
-            )
-        );
-        assert_eq!(call(super::UseCase::LentMessages).0, "throughput::hash");
+        assert_eq!(call(super::UseCase::OneMessage), "convenience::hash");
+        assert_eq!(call(super::UseCase::IdleOneMessage), "convenience::hash");
+        assert_eq!(call(super::UseCase::LentMessages), "throughput::hash");
         for use_case in [
             super::UseCase::IncrementalMessage,
             super::UseCase::LentIncrementalMessage,
         ] {
-            assert_eq!(call(use_case).0, "convenience::Hasher");
+            assert_eq!(call(use_case), "convenience::Hasher");
             assert_eq!(super::row_and_column(use_case).0, "incremental");
         }
         for use_case in [
             super::UseCase::ContinuousMessages,
             super::UseCase::ContinuousCollection,
         ] {
-            assert_eq!(call(use_case).0, "throughput::hash");
+            assert_eq!(call(use_case), "throughput::hash");
             assert_eq!(super::place(use_case).2, "throughput::Pipeline::commit");
         }
         assert_eq!(
-            call(super::UseCase::ContinuousBatches).0,
+            call(super::UseCase::ContinuousBatches),
             "throughput::hash_many"
         );
         assert_eq!(
@@ -1279,21 +1149,46 @@ mod tests {
             super::place(super::UseCase::ReceivingMessage).2,
             "throughput::Pipeline::commit"
         );
+        assert_eq!(call(super::UseCase::ManyMessages), "throughput::hash_many");
         assert_eq!(
-            call(super::UseCase::ManyMessages).0,
-            "throughput::hash_many"
-        );
-        assert_eq!(
-            call(super::UseCase::InterleavedTurn).0,
+            call(super::UseCase::InterleavedTurn),
             "throughput::update_each"
         );
-        assert_eq!(call(super::UseCase::Collection).0, "throughput::hash_each");
+        assert_eq!(call(super::UseCase::Collection), "throughput::hash_each");
         assert_eq!(
-            call(super::UseCase::ReceivingMessage).0,
+            call(super::UseCase::ReceivingMessage),
             "convenience::Hasher::update"
         );
         for use_case in super::UseCase::ALL {
-            assert!(!call(use_case).0.contains("multithreaded"), "{use_case:?}");
+            assert!(!call(use_case).contains("multithreaded"), "{use_case:?}");
+        }
+    }
+
+    /// A call's page follows from its name: a function's, a type's and a
+    /// method's each have their shape, and every call the map names, for
+    /// either form of BLAKE3-Servil, has one.
+    #[test]
+    fn a_calls_page_follows_from_its_name() {
+        assert_eq!(
+            super::doc_page("throughput::hash_many_multithreaded"),
+            "throughput/fn.hash_many_multithreaded.html"
+        );
+        assert_eq!(
+            super::doc_page("convenience::Hasher"),
+            "convenience/struct.Hasher.html"
+        );
+        assert_eq!(
+            super::doc_page("throughput::Pipeline::commit"),
+            "throughput/struct.Pipeline.html#method.commit"
+        );
+        for use_case in super::UseCase::ALL {
+            let (_, column, call) = super::place(use_case);
+            for call in [call.to_owned(), super::one_thread_call(column, call)] {
+                let page = super::doc_page(&call);
+                let module = call.split("::").next().unwrap();
+                assert!(page.starts_with(&format!("{module}/")), "{call}: {page}");
+                assert!(page.contains(".html"), "{call}: {page}");
+            }
         }
     }
 

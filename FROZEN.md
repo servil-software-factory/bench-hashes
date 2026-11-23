@@ -91,6 +91,15 @@ the notes) may still change, to say it better.
   against 0.10.0 and against the library without the call. The report's
   header named a call per piece for both forms in this use case; it now
   names the calls the cells make.
+- **The map's links to BLAKE3-Servil's documentation follow from the
+  calls' names** (Devon Jonte, November 23, 2026). Since 0.22 the map
+  named the calls in the library's `throughput` module and linked their
+  pages under the module's former name, `performance`: dead links, 20
+  to 34 on a page. A call's page is now computed from its name, so the
+  two cannot disagree. The thirteen published maps of 0.22 and 0.24
+  take the same correction as an exact patch of those links, as stored
+  maps took the phone repair; their measurements, values and call names
+  stay as they were.
 
 **Changes for 0.24, November 18–20, 2026** (Zooko and Devon Jonte's decisions, each dated):
 - **The pin is BLAKE3-Servil 0.10.0** (Devon Jonte, November 20, 2026):

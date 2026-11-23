@@ -28,6 +28,12 @@ more. This cell's pieces are 16 KiB at most, and every 0.24.0 record reads
 the two calls within 0.001 ns/B of each other there, so the cell's numbers
 compare with earlier releases'.
 
+**The map's links to BLAKE3-Servil's documentation work again.** The map
+linked each call's page under the library module's former name, where no
+page answers. A link now follows from the call's name, and the published
+0.22 and 0.24 maps carry the corrected links; their measurements and call
+names are unchanged.
+
 # bench-hashes 0.24.0+70970a7414b5bbb1f14db73138a764dd84d3da18
 
 **`b3sum` labels distinguish BLAKE3-Servil from official.** Maps and charts
