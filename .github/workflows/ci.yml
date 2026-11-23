@@ -27,11 +27,10 @@ jobs:
         with:
           name: pinned-run-check-${{ matrix.os }}
           path: ${{ runner.temp }}/pinned-run-check/
-      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
-        with:
-          # check's coverage uses the toolchain's llvm-profdata and llvm-cov,
-          # and a test holds that it takes them (check::tests).
-          components: llvm-tools
+      - name: Install Rust 1.99.1 (llvm-tools)
+        # check's coverage uses the toolchain's llvm-profdata and llvm-cov,
+        # and a test holds that it takes them (check::tests).
+        run: sh tools/ci-rust.sh llvm-tools
       - uses: taiki-e/install-action@2b545d4fd42fdd72ed2a44eab8fedd1850e8f731 # nextest
       - run: cargo build --release --locked
       # Each test in its own process (AGENTS: "Tests run under nextest").
@@ -66,7 +65,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - name: Install Rust 1.99.1
+        run: sh tools/ci-rust.sh
       - name: Install hash-verified cargo-deny 0.22.0 and cargo-vet 0.10.4
         run: |
           curl --proto '=https' --tlsv1.2 -sSfL -o /tmp/cargo-deny.tar.gz https://github.com/EmbarkStudios/cargo-deny/releases/download/0.22.0/cargo-deny-0.22.0-x86_64-unknown-linux-musl.tar.gz
