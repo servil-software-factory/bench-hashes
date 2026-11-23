@@ -1,4 +1,41 @@
 
 # cargo-vet audits file
 
-[audits]
+[criteria.agent-safe-to-deploy]
+description = """
+Reviewed by an AI coding agent (not a human auditor) to the safe-to-deploy standard:
+no serious security vulnerability to production software exposed to untrusted input.
+Does not imply built-in safe-to-deploy, so downstream importers opt in explicitly via criteria-map.
+"""
+implies = "agent-safe-to-run"
+
+[criteria.agent-safe-to-run]
+description = """
+Reviewed by an AI coding agent (not a human auditor) to the safe-to-run standard:
+safe to compile and run in development, test, or build environments.
+Does not imply built-in safe-to-run, so downstream importers opt in explicitly via criteria-map.
+"""
+
+[[audits.arrayvec]]
+who = "Devon Jonte <devonjonte@users.noreply.github.com>"
+criteria = "agent-safe-to-deploy"
+delta = "0.7.6 -> 0.7.8"
+notes = "Fixes ZST double-free in extend via mem::forget, adds safe spare_capacity_mut, 16-bit LenUint, and lifetime annotations."
+
+[[audits.crypto-common]]
+who = "Devon Jonte <devonjonte@users.noreply.github.com>"
+criteria = "agent-safe-to-deploy"
+delta = "0.1.6 -> 0.1.7"
+notes = "Manifest-only change pinning generic-array =0.14.7; zero source changes."
+
+[[audits.sha1]]
+who = "Devon Jonte <devonjonte@users.noreply.github.com>"
+criteria = "agent-safe-to-deploy"
+delta = "0.10.6 -> 0.10.7"
+notes = "Removes optional sha1-asm dependency and aarch64 asm wrapper, adds doc example."
+
+[[audits.version_check]]
+who = "Devon Jonte <devonjonte@users.noreply.github.com>"
+criteria = "agent-safe-to-deploy"
+delta = "0.9.4 -> 0.9.5"
+notes = "Doc-comment and Cargo.toml metadata changes only; zero executable code changes."

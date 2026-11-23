@@ -180,7 +180,7 @@ def a_vulnerable_version(stage):
     repo = stage / "repo"
     edit(repo / "Cargo.lock", r'(name = "ring"\nversion = ")[^"]*("\nsource = "[^"]*"\nchecksum = ")[0-9a-f]*',
          r"\g<1>0.17.11\g<2>da5349ae27d3887ca812fb375b45a4fbb36d8d12d2df394968cd86e35683fe73")
-    strip_audit_evidence(repo, "ring", replace_with=[("0.17.11", "safe-to-deploy")])
+    strip_audit_evidence(repo, "ring", replace_with=[("0.17.11", "agent-safe-to-deploy")])
 
 
 def a_disallowed_licence(stage):
