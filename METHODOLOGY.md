@@ -114,12 +114,17 @@ KiB, 100,000 B, 1 MiB, and 16 MiB: many short, a few long. When a
 message ends, its hash is used and the next opens in its place, and the
 schedule carries over from sample to sample, so samples see the steady
 state. Each piece is read, timed, as a memory copy into a buffer of the
-program's, then handed to its message's incremental hasher
-(`Hasher::update` in crates.io BLAKE3 and in BLAKE3-Servil,
-`update_rayon` for BLAKE3 official mt, `update_multithreaded` for
-BLAKE3-Servil mt, `Digest::update` in sha2, sha1-checked, and sha3,
-ring's `Context::update`, CommonCrypto's `CC_SHA256_Update`). The time
-is per byte of pieces.
+program's. The pieces arrive in turns of 64, as one wait of a server's
+event loop delivers them. BLAKE3-Servil takes a turn in one call,
+`throughput::update_each`, and finishes the messages that ended in it
+with `throughput::finalize_each`; its multithreaded form makes the same
+calls here, since these pieces are far below the 512 KiB from which the
+library's pool takes a piece. Every other contender hands each piece to
+its message's incremental hasher (`Hasher::update` in crates.io BLAKE3,
+`update_rayon` for BLAKE3 official mt, `Digest::update` in sha2,
+sha1-checked, and sha3, ring's `Context::update`, CommonCrypto's
+`CC_SHA256_Update`) and finishes each message as it ends. The time is
+per byte of pieces.
 
 A turn of those pieces after a gap (the turn cells, at this schedule and
 at 1,024 open messages of 1 KiB in 256-byte pieces) is measured two ways

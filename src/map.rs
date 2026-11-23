@@ -173,8 +173,8 @@ fn place(use_case: UseCase) -> (&'static str, &'static str, &'static str, &'stat
         UseCase::Interleaved => (
             "many",
             "lent",
-            "throughput::update_each_multithreaded",
-            "performance/fn.update_each_multithreaded.html",
+            "throughput::update_each",
+            "throughput/fn.update_each.html",
         ),
         UseCase::InterleavedTurn => (
             "many",

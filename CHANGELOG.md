@@ -21,6 +21,13 @@ depending on the gap (a small burst pays the workers' wake). Numbers of the
 multithreaded turn cells from this release on compare with earlier ones as
 two APIs do.
 
+**BLAKE3-Servil's multithreaded form calls `throughput::update_each` where
+many open messages lend their pieces.** BLAKE3-Servil 0.11 removes
+`update_each_multithreaded`, whose pool takes only pieces of 512 KiB and
+more. This cell's pieces are 16 KiB at most, and every 0.24.0 record reads
+the two calls within 0.001 ns/B of each other there, so the cell's numbers
+compare with earlier releases'.
+
 # bench-hashes 0.24.0+70970a7414b5bbb1f14db73138a764dd84d3da18
 
 **`b3sum` labels distinguish BLAKE3-Servil from official.** Maps and charts

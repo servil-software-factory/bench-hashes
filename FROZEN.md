@@ -30,7 +30,7 @@ read as alike. The
 documents that explain the benchmark (README, METHODOLOGY, CONTRIBUTING,
 the notes) may still change, to say it better.
 
-**Changes for the next release, November 20–22, 2026** (Devon Jonte's decisions, each dated):
+**Changes for the next release, November 20–23, 2026** (Devon Jonte's decisions, each dated):
 - **The overview shows a machine's newest record** (Devon Jonte, November
   20, 2026; Zooko approved it). A machine keeps a folder a kernel, so it
   can hold several records, and a family's column opened on the chosen
@@ -59,8 +59,8 @@ the notes) may still change, to say it better.
   per open message whatever its length (the caller that knows no
   lengths; a caller that gathers 1 KiB messages into shared Rooms read
   26% to 31% faster still in a probe, BLAKE3 #470). The lent cell
-  (`Interleaved`) keeps `update_each_multithreaded`, as every lent cell
-  keeps its synchronous call. One library (0.10.0) under both benches
+  (`Interleaved`) keeps a synchronous call, as every lent cell does (the
+  next entry says which). One library (0.10.0) under both benches
   across all cells on a Ryzen 9700X and an EPYC 9255: mt at `1024 x 1 KiB`
   takes 82% to 88% less time after every gap; mt at `256` reads from 6%
   faster to 20% slower depending on the gap and machine (+17.3% after
@@ -73,6 +73,24 @@ the notes) may still change, to say it better.
   read 4% to 8% slower, because a call after idling finds in the caches
   what its neighbour left (METHODOLOGY, Interleaving); st alone in the
   process reads level under both benches.
+- **BLAKE3-Servil mt's lent cell of many open messages calls
+  `update_each`** (Devon Jonte, November 23, 2026; BLAKE3 #476).
+  BLAKE3-Servil 0.11 removes `throughput::update_each_multithreaded`
+  (Zooko, November 22, 2026), whose pool takes only pieces of 512 KiB
+  and more. The pieces of `Interleaved` are 16 KiB at most, so the pool
+  took none of them, and every 0.24.0 record reads mt within 0.001 ns/B
+  of st in this cell (0.109 and 0.109 on the Ryzen 7 9700X, 0.137 and
+  0.137 on the EPYC 9255, 0.401 and 0.402 on the Xeon Gold 6330, 0.191
+  and 0.191 on the Apple M6). mt now makes st's call,
+  `throughput::update_each`: the library's documentation gives it to a
+  caller who lends the pieces of many open messages. mt keeps the cell,
+  where BLAKE3 official mt's `update_rayon` is measured too, and its
+  numbers compare with earlier releases'. The Pipeline for the same
+  arrivals is what mt's four turn cells measure (the entry above). The
+  benchmark changes before the library does, so that one source builds
+  against 0.10.0 and against the library without the call. The report's
+  header named a call per piece for both forms in this use case; it now
+  names the calls the cells make.
 
 **Changes for 0.24, November 18–20, 2026** (Zooko and Devon Jonte's decisions, each dated):
 - **The pin is BLAKE3-Servil 0.10.0** (Devon Jonte, November 20, 2026):
@@ -1547,7 +1565,7 @@ blake3-servil-st Interleaved: a Hasher per open message, 256 messages open at on
 blake3-servil-st Collection: throughput::hash_each(Mode::Plain, items, out), every item of the collection in one call, in memory
 blake3-servil-st LentBatches: throughput::hash_many(Mode::Plain, &Batch::from_blocks(blocks, 64), out), the batch borrowed in place, batches one after another, each read into a kept buffer and lent with kept digests until the call returns
 blake3-servil-mt LentMessages: throughput::hash_multithreaded(Mode::Plain, blocks, len), one message after another, each read into a kept buffer and lent until the call returns
-blake3-servil-mt Interleaved: a Hasher per open message, 256 messages open at once, the pieces arriving in turns of 64, each read into its own kept buffer; throughput::update_each_multithreaded per turn, then throughput::finalize_each for the messages that ended in it, each buffer lent until the calls return
+blake3-servil-mt Interleaved: a Hasher per open message, 256 messages open at once, the pieces arriving in turns of 64, each read into its own kept buffer; throughput::update_each per turn, then throughput::finalize_each for the messages that ended in it, each buffer lent until the calls return
 blake3-servil-mt Collection: throughput::hash_each_multithreaded(Mode::Plain, items, out), every item of the collection in one call, in memory
 blake3-servil-mt LentBatches: throughput::hash_many_multithreaded(Mode::Plain, &Batch::from_blocks(blocks, 64), out), the batch borrowed in place, batches one after another, each read into a kept buffer and lent with kept digests until the call returns
 blake3-servil-st IdleOneMessage: convenience::hash(input), each call after idling
