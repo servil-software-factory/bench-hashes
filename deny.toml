@@ -34,7 +34,9 @@ allow = [
     "CC0-1.0",
     "TGPPL-1.0",
 ]
-# BOSL-1.0 is welcome too (Zooko, November 23, 2026). SPDX has no name for
-# it, so cargo-deny cannot read it in this list: a crate under it gets a
-# `clarify` entry here when one arrives.
+# BOSL-1.0 is welcome too (Zooko, November 23, 2026). SPDX has no identifier
+# for it, so cargo-deny cannot read it directly: when a crate arrives under
+# it, add both a `clarify` entry identifying its licence text (by file hash)
+# as `LicenseRef-BOSL-1.0` and an entry allowing `LicenseRef-BOSL-1.0` (here
+# or in `exceptions`).
 confidence-threshold = 0.8

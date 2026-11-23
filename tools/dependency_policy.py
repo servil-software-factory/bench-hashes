@@ -27,11 +27,16 @@ OURS = {
 
 def strangers(metadata, root=ROOT, ours=OURS):
     """What is wrong with the packages that have no source, in `cargo metadata`'s account:
-    each must match one of `ours` by both name and manifest path."""
+    Cargo's `workspace_members` must resolve to `ours`, and every source-less package must match
+    one of `ours` by both name and manifest path."""
     root = Path(root).resolve()
     expected = {name: (root / folder / "Cargo.toml").resolve() for name, folder in ours.items()}
     seen = set()
     wrong = []
+    by_id = {p["id"]: p for p in metadata["packages"]}
+    actual_members = {by_id[mid]["name"] if mid in by_id else mid for mid in metadata.get("workspace_members", [])}
+    if actual_members != set(ours):
+        wrong.append(f"Cargo workspace_members are {sorted(actual_members)}; expected {sorted(ours)}")
     for package in sorted((p for p in metadata["packages"] if p["source"] is None), key=lambda p: (p["name"], p["manifest_path"])):
         name = package["name"]
         path = Path(package["manifest_path"]).resolve()
@@ -55,7 +60,7 @@ def main():
     wrong = strangers(json.loads(metadata.stdout))
     for line in wrong:
         print(f"dependency policy: {line}", file=sys.stderr)
-    deny = subprocess.run(["cargo", "deny", "--locked", "check", "-D", "index-failure"], cwd=ROOT)
+    deny = subprocess.run(["cargo", "deny", "--color", "never", "--locked", "check", "-D", "index-failure"], cwd=ROOT)
     vet = subprocess.run(["cargo", "vet", "--locked"], cwd=ROOT)
     return 1 if wrong or deny.returncode or vet.returncode else 0
 
