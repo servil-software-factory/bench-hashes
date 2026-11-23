@@ -54,5 +54,25 @@ class Strangers(unittest.TestCase):
         self.assertTrue(any("expected crate clocks at clocks/Cargo.toml is absent" in w for w in wrong), wrong)
 
 
+class StripEvidence(unittest.TestCase):
+    def test_strips_audits_exemptions_imports_and_trust_while_keeping_neighbours(self):
+        sample = (
+            '[policy.wyhash]\nnotes = """\n[not.a.header]\n"""\n\n'
+            '[[exemptions.wyhash]]\nversion = "0.6.0"\ncriteria = "safe-to-deploy"\n\n'
+            '[[audits.wyhash]]\nwho = "Devon"\ncriteria = "safe-to-deploy"\nversion = "0.6.0"\n\n'
+            '[[audits.google.audits.wyhash]]\ncriteria = "safe-to-deploy"\nversion = "0.6.0"\n\n'
+            '[[trusted.wyhash]]\nuser-id = 1\n\n'
+            '[[exemptions.wyhash-other]]\nversion = "0.1.0"\ncriteria = "safe-to-run"\n'
+        )
+        got = policy.strip_toml_crate_sections(sample, "wyhash")
+        self.assertIn("[policy.wyhash]", got)
+        self.assertIn("[not.a.header]", got)
+        self.assertIn("[[exemptions.wyhash-other]]", got)
+        self.assertNotIn("[[exemptions.wyhash]]", got)
+        self.assertNotIn("[[audits.wyhash]]", got)
+        self.assertNotIn("[[audits.google.audits.wyhash]]", got)
+        self.assertNotIn("[[trusted.wyhash]]", got)
+
+
 if __name__ == "__main__":
     unittest.main()

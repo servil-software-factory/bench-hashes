@@ -80,10 +80,11 @@ jobs:
           tar Jxf /tmp/cargo-vet.tar.xz -C /tmp --strip-components=1 --wildcards '*/cargo-vet'
           install -m 755 /tmp/cargo-vet ~/.cargo/bin/cargo-vet
           rm -f /tmp/cargo-vet.tar.xz /tmp/cargo-vet
-      - name: Check path allowlist, cargo-deny, and cargo-vet
+      - name: Check path allowlist, cargo-deny, cargo-vet, and planted-fault controls
         run: |
           python3 tools/test_dependency_policy.py
           python3 tools/dependency_policy.py
+          python3 tools/dependency_policy.py controls
 
   python-tools:
     name: python tools (${{ matrix.os }}, ${{ matrix.python }})
