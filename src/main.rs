@@ -2378,7 +2378,11 @@ fn participating_orders_for(roster: &Roster, point_index: usize) -> Vec<Vec<usiz
         .algorithms
         .iter()
         .enumerate()
-        .filter_map(|(index, &algorithm)| roster.measures_cell(algorithm, point_index).then_some(index))
+        .filter_map(|(index, &algorithm)| {
+            roster
+                .measures_cell(algorithm, point_index)
+                .then_some(index)
+        })
         .collect();
     match participants.len() {
         0 => Vec::new(),
@@ -3049,7 +3053,7 @@ fn quiet(arguments: &[String]) {
             Ok(()) => println!("quiet"),
             Err(reason) => {
                 println!("busy: {reason}");
-                std::process::exit(2);
+                exit_with(2);
             }
         },
         [flag] if flag == "--wait" => {
@@ -3114,15 +3118,15 @@ fn parse_cells(
 ) {
     let mut cell_set = std::collections::BTreeSet::new();
     for entry in spec.split(';').map(str::trim).filter(|s| !s.is_empty()) {
-        let (key, label) = entry.split_once('|').unwrap_or_else(|| {
-            panic!("--cells: expected KEY|POINT, got {entry:?}\n\n{USAGE}")
-        });
+        let (key, label) = entry
+            .split_once('|')
+            .unwrap_or_else(|| panic!("--cells: expected KEY|POINT, got {entry:?}\n\n{USAGE}"));
         let algorithm = Algorithm::ALL
             .into_iter()
             .find(|a| a.key() == key.trim())
             .unwrap_or_else(|| {
                 eprintln!("unknown contender {key:?}\n\n{USAGE}");
-                std::process::exit(2);
+                exit_with(2);
             });
         let point = point_named(label);
         assert!(
@@ -3134,7 +3138,10 @@ fn parse_cells(
         );
         cell_set.insert((algorithm, point));
     }
-    assert!(!cell_set.is_empty(), "--cells needs at least one cell\n\n{USAGE}");
+    assert!(
+        !cell_set.is_empty(),
+        "--cells needs at least one cell\n\n{USAGE}"
+    );
     let algorithms: Vec<Algorithm> = Algorithm::ALL
         .into_iter()
         .filter(|a| cell_set.iter().any(|&(ca, _)| ca == *a))
@@ -3161,7 +3168,7 @@ fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
                     algorithm.name()
                 );
             }
-            std::process::exit(0);
+            exit_with(0);
         }
         [flag, keys] if flag == "--contenders" => {
             let algorithms = keys
@@ -3172,7 +3179,7 @@ fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
                         .find(|algorithm| algorithm.key() == key.trim())
                         .unwrap_or_else(|| {
                             eprintln!("unknown contender {key:?}\n\n{USAGE}");
-                            std::process::exit(2);
+                            exit_with(2);
                         })
                 })
                 .collect();
@@ -3180,11 +3187,11 @@ fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
         }
         [flag] if flag == "--help" || flag == "-h" => {
             print!("{USAGE}");
-            std::process::exit(0);
+            exit_with(0);
         }
         _ => {
             eprint!("{USAGE}");
-            std::process::exit(2);
+            exit_with(2);
         }
     }
 }
@@ -3274,13 +3281,13 @@ fn main() {
         return;
     }
     if arguments.first().map(String::as_str) == Some("check") {
-        std::process::exit(check::command(&arguments[1..]));
+        exit_with(check::command(&arguments[1..]));
     }
     if arguments.first().map(String::as_str) == Some("build-against") {
-        std::process::exit(check::build_against_command(&arguments[1..]));
+        exit_with(check::build_against_command(&arguments[1..]));
     }
     if arguments.first().map(String::as_str) == Some("regress") {
-        std::process::exit(regress_command(&arguments[1..]));
+        exit_with(regress_command(&arguments[1..]));
     }
     if arguments.first().map(String::as_str) == Some("b3sum") {
         return b3sum::command(&arguments[1..]);
@@ -3704,7 +3711,7 @@ fn measure_all(
             if pattern == PATTERNS[PATTERNS.len() - 1] {
                 twins_take_their_sizes(roster, &mut batch_iterations);
                 Sizes::write(path, &[], roster, &batch_iterations);
-                std::process::exit(0);
+                exit_with(0);
             }
             continue;
         }
@@ -7813,10 +7820,19 @@ fn merge_sizes(old: &str, new: &str) -> String {
         .collect()
 }
 
+/// Flush stdio before leaving via `std::process::exit`: when stdout is
+/// redirected to a pipe or log file (block-buffered), `process::exit` alone
+/// discards buffered lines such as `regress` diagnostics.
+fn exit_with(code: i32) -> ! {
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+    let _ = std::io::Write::flush(&mut std::io::stderr());
+    std::process::exit(code);
+}
+
 /// `regress`'s exit code when a side's run stopped (a panic, a crash):
 /// beside 0 (no cell slower), 1 (a cell slower) and 2 (no verdict: the
 /// load).
-const REGRESS_STOPPED: i32 = 3;
+pub(crate) const REGRESS_STOPPED: i32 = 3;
 
 /// What `regress` prints when a side's run stops: which side, its build,
 /// how it ended, and its own last words (its stderr without the progress
@@ -7935,7 +7951,7 @@ fn regress_run(
                 &record.display().to_string(),
             )
         );
-        std::process::exit(REGRESS_STOPPED);
+        exit_with(REGRESS_STOPPED);
     }
     let found: Vec<_> = fs::read_dir(directory.join("benchmark-results"))
         .unwrap()
@@ -8907,7 +8923,11 @@ fn host_cpu_and_kernel() -> (String, usize, String) {
         "the operating system must report at least one logical CPU"
     );
 
-    (cpu_type, cpu_count, format_os_type(std::env::consts::OS, &kernel))
+    (
+        cpu_type,
+        cpu_count,
+        format_os_type(std::env::consts::OS, &kernel),
+    )
 }
 
 fn machine_metadata() -> MachineMetadata {
@@ -9728,7 +9748,8 @@ mod correctness_tests {
             parse_linux_cpuinfo(x86),
             (Some("AMD EPYC 9255 24-Core Processor".to_owned()), 2)
         );
-        let arm = "processor\t: 0\nCPU implementer\t: 0xc0\n\nprocessor\t: 1\nCPU implementer\t: 0xc0\n";
+        let arm =
+            "processor\t: 0\nCPU implementer\t: 0xc0\n\nprocessor\t: 1\nCPU implementer\t: 0xc0\n";
         assert_eq!(parse_linux_cpuinfo(arm), (None, 2));
         assert_eq!(format_os_type("macos", "25.4.0"), "darwin25");
         assert_eq!(
@@ -9741,7 +9762,10 @@ mod correctness_tests {
         if cfg!(target_os = "macos") {
             assert!(os.starts_with("darwin"), "{os}");
         } else if cfg!(target_os = "linux") {
-            assert!(os.starts_with("linux") && !os.ends_with("unreported"), "{os}");
+            assert!(
+                os.starts_with("linux") && !os.ends_with("unreported"),
+                "{os}"
+            );
         }
     }
 
@@ -11511,7 +11535,10 @@ mod correctness_tests {
 
         // Even though `lent 64 B` is measured for mt, it is NOT measured for st,
         // so st's `continuous 64 B` must measure itself rather than copy an empty twin.
-        assert_eq!(lent_twin(&roster, Algorithm::Blake3ServilSt, p_cont64), None);
+        assert_eq!(
+            lent_twin(&roster, Algorithm::Blake3ServilSt, p_cont64),
+            None
+        );
 
         // Once st also includes `lent 64 B`, its twin resolves cleanly.
         roster
@@ -11549,7 +11576,13 @@ mod correctness_tests {
         results[0][p64] = Some(cell_val);
         results[1][p128] = Some(cell_val);
         let mut out = String::new();
-        append_table(&mut out, &sparse_roster, &results, Scenario::Solo, UseCase::OneMessage);
+        append_table(
+            &mut out,
+            &sparse_roster,
+            &results,
+            Scenario::Solo,
+            UseCase::OneMessage,
+        );
         assert!(out.contains("64 B") && out.contains("128 B") && out.contains(" - "));
 
         let scope = RegressScope::Cells("blake3-servil-st|64 B;blake3-servil-mt|128 B".to_owned());

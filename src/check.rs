@@ -527,11 +527,8 @@ pub fn command(arguments: &[String]) -> i32 {
         &new_exe,
         first + SECOND_PAIRS..first + 2 * SECOND_PAIRS,
     );
-    let mut second: Vec<String> = vec![
-        "regress".into(),
-        "--pairs".into(),
-        SECOND_PAIRS.to_string(),
-    ];
+    let mut second: Vec<String> =
+        vec!["regress".into(), "--pairs".into(), SECOND_PAIRS.to_string()];
     second.extend(stage2_scope_args(&suspects, old_bench_rev.is_some()));
     second.extend(["--judge".into(), suspects.join(";")]);
     if let Some(keep) = &keep {
@@ -693,6 +690,27 @@ fn point_label(use_case: &str, point: &str) -> Option<String> {
         .map(|u| format!("{}{point}", u.label_prefix()))
 }
 
+/// Interpret a child `regress` / `compare` exit status. Normal exit codes pass
+/// through; a signal kill (or missing exit status) logs the terminating signal
+/// and returns `REGRESS_STOPPED` (`3`) so a crashing build is never mistaken
+/// for `2` (`no verdict`).
+fn child_exit_code(exe: &Path, status: std::process::ExitStatus) -> (i32, Option<String>) {
+    if let Some(code) = status.code() {
+        return (code, None);
+    }
+    #[cfg(unix)]
+    let detail = {
+        use std::os::unix::process::ExitStatusExt;
+        match status.signal() {
+            Some(sig) => format!("check: {} terminated by signal {sig}", exe.display()),
+            None => format!("check: {} terminated without an exit code", exe.display()),
+        }
+    };
+    #[cfg(not(unix))]
+    let detail = format!("check: {} terminated without an exit code", exe.display());
+    (super::REGRESS_STOPPED, Some(detail))
+}
+
 /// `regress` with these arguments, its output passed through and kept.
 fn run_regress(exe: &Path, bench: &Path, arguments: &[String]) -> (i32, String) {
     let out = Command::new(exe)
@@ -703,7 +721,13 @@ fn run_regress(exe: &Path, bench: &Path, arguments: &[String]) -> (i32, String) 
         .expect("regress runs");
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
     print!("{text}");
-    (out.status.code().unwrap_or(2), text)
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+    let (code, note) = child_exit_code(exe, out.status);
+    if let Some(note) = note {
+        eprintln!("{note}");
+        let _ = std::io::Write::flush(&mut std::io::stderr());
+    }
+    (code, text)
 }
 
 /// BLAKE3-Servil's checkout that --fork names, wherever it sits: a git
@@ -2026,10 +2050,7 @@ mod tests {
         ];
         assert_eq!(
             super::stage2_scope_args(&suspects, false),
-            vec![
-                "--cells",
-                "blake3-servil-mt|1024;blake3-servil-st|64 B",
-            ]
+            vec!["--cells", "blake3-servil-mt|1024;blake3-servil-st|64 B",]
         );
         assert_eq!(
             super::stage2_scope_args(&suspects, true),
@@ -2040,5 +2061,41 @@ mod tests {
                 "1024,64 B",
             ]
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_killed_by_signal_reports_signal_and_stopped_exit_code() {
+        let exe = std::path::Path::new("/bin/sh");
+        let args = vec![
+            "-c".to_owned(),
+            "printf 'before-crash\\n'; kill -ABRT $$".to_owned(),
+        ];
+        let (code, text) = super::run_regress(exe, std::path::Path::new("."), &args);
+        assert_eq!(code, super::super::REGRESS_STOPPED);
+        assert_eq!(text, "before-crash\n");
+
+        let status = std::process::Command::new(exe)
+            .args(["-c", "kill -ABRT $$"])
+            .status()
+            .expect("sh runs");
+        let (code, note) = super::child_exit_code(exe, status);
+        assert_eq!(code, super::super::REGRESS_STOPPED);
+        let note = note.expect("signal diagnostic");
+        assert!(note.contains("signal 6"), "expected signal 6 in {note:?}");
+        assert!(note.contains("/bin/sh"), "expected exe path in {note:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_normal_exit_codes_pass_through_unchanged() {
+        let exe = std::path::Path::new("/bin/sh");
+        for expected in [0, 1, 2, 3] {
+            let status = std::process::Command::new(exe)
+                .args(["-c", &format!("exit {expected}")])
+                .status()
+                .expect("sh runs");
+            assert_eq!(super::child_exit_code(exe, status), (expected, None));
+        }
     }
 }
