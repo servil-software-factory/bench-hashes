@@ -512,14 +512,6 @@ pub fn command(arguments: &[String]) -> i32 {
         suspects.len(),
         suspects.join(", ")
     );
-    let field = |k: &String, i: usize| k.split('|').nth(i).expect("a cell key").to_string();
-    let contenders: BTreeSet<String> = suspects.iter().map(|k| field(k, 0)).collect();
-    let points: BTreeSet<String> = suspects
-        .iter()
-        .map(|k| {
-            point_label(&field(k, 2), &field(k, 3)).expect("a suspect's use case is this bench's")
-        })
-        .collect();
     let first = 2 * layouts_a_side;
     let olds = layouts(
         &old_bench,
@@ -539,13 +531,9 @@ pub fn command(arguments: &[String]) -> i32 {
         "regress".into(),
         "--pairs".into(),
         SECOND_PAIRS.to_string(),
-        "--contenders".into(),
-        contenders.into_iter().collect::<Vec<_>>().join(","),
-        "--points".into(),
-        points.into_iter().collect::<Vec<_>>().join(","),
-        "--judge".into(),
-        suspects.join(";"),
     ];
+    second.extend(stage2_scope_args(&suspects, old_bench_rev.is_some()));
+    second.extend(["--judge".into(), suspects.join(";")]);
     if let Some(keep) = &keep {
         second.extend([
             "--keep".to_string(),
@@ -557,6 +545,45 @@ pub fn command(arguments: &[String]) -> i32 {
     second.push("--".into());
     second.extend(news);
     run_regress(&new_exe, &bench, &second).0
+}
+
+/// The scope flags `check`'s second stage passes to `regress`. When both
+/// sides run this bench (`!old_bench`), `--cells` measures only the exact
+/// suspect `(contender, point)` cells instead of the Cartesian product
+/// `contenders × points` (bench-hashes #210). Under `--old-bench`, the old
+/// binary may predate `--cells`, so we fall back to `--contenders` and
+/// `--points`.
+fn stage2_scope_args(suspects: &[String], old_bench: bool) -> Vec<String> {
+    let field = |k: &String, i: usize| k.split('|').nth(i).expect("a cell key").to_string();
+    if old_bench {
+        let contenders: BTreeSet<String> = suspects.iter().map(|k| field(k, 0)).collect();
+        let points: BTreeSet<String> = suspects
+            .iter()
+            .map(|k| {
+                point_label(&field(k, 2), &field(k, 3))
+                    .expect("a suspect's use case is this bench's")
+            })
+            .collect();
+        vec![
+            "--contenders".into(),
+            contenders.into_iter().collect::<Vec<_>>().join(","),
+            "--points".into(),
+            points.into_iter().collect::<Vec<_>>().join(","),
+        ]
+    } else {
+        let cells: BTreeSet<String> = suspects
+            .iter()
+            .map(|k| {
+                let label = point_label(&field(k, 2), &field(k, 3))
+                    .expect("a suspect's use case is this bench's");
+                format!("{}|{label}", field(k, 0))
+            })
+            .collect();
+        vec![
+            "--cells".into(),
+            cells.into_iter().collect::<Vec<_>>().join(";"),
+        ]
+    }
 }
 
 /// Compare the accepted pairs in this probe's record directory.
@@ -1988,5 +2015,30 @@ mod tests {
                 .expect("this bench's use case");
             assert_eq!(super::super::point_named(&label), index, "{label}");
         }
+    }
+
+    #[test]
+    fn stage2_measures_exact_suspect_cells_unless_old_bench() {
+        let suspects = vec![
+            "blake3-servil-st|solo|OneMessage|64 B".to_owned(),
+            "blake3-servil-mt|solo|ManyMessages|1024".to_owned(),
+            "blake3-servil-mt|shared-smt|ManyMessages|1024".to_owned(),
+        ];
+        assert_eq!(
+            super::stage2_scope_args(&suspects, false),
+            vec![
+                "--cells",
+                "blake3-servil-mt|1024;blake3-servil-st|64 B",
+            ]
+        );
+        assert_eq!(
+            super::stage2_scope_args(&suspects, true),
+            vec![
+                "--contenders",
+                "blake3-servil-mt,blake3-servil-st",
+                "--points",
+                "1024,64 B",
+            ]
+        );
     }
 }

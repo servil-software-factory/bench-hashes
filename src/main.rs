@@ -1476,7 +1476,7 @@ impl Point {
  * an arm in hash_batch; the harness handles selection, interleaving,
  * and reporting for any count.
  */
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum Algorithm {
     Blake3,
     Sha256,
@@ -2239,8 +2239,12 @@ struct MachineMetadata {
 struct Roster {
     algorithms: Vec<Algorithm>,
     /// The points measured, as ascending indices into POINTS: every point,
-    /// or the subset --points names.
+    /// or the subset --points / --cells names.
     points: Vec<usize>,
+    /// Exact `(algorithm, point_index)` cells when `--cells` narrows a run;
+    /// `None` measures every participating `(algorithm, point)` in
+    /// `algorithms × points`.
+    cells: Option<std::collections::BTreeSet<(Algorithm, usize)>>,
     /// Sample rounds.
     rounds: usize,
     /// The run's visits: TO_MEASURE_SPEED, or TO_CHECK_FOR_REGRESSIONS in a
@@ -2318,6 +2322,7 @@ impl Roster {
         Self {
             algorithms,
             points,
+            cells: None,
             rounds,
             visits,
             train: NONSTOP_TRAIN,
@@ -2340,6 +2345,16 @@ impl Roster {
         self.points.binary_search(&point_index).is_ok()
     }
 
+    /// Whether this run measures `algorithm` at `POINTS[point_index]`.
+    fn measures_cell(&self, algorithm: Algorithm, point_index: usize) -> bool {
+        algorithm.takes_part(POINTS[point_index].use_case)
+            && self.measures(point_index)
+            && self
+                .cells
+                .as_ref()
+                .is_none_or(|cells| cells.contains(&(algorithm, point_index)))
+    }
+
     /// The point the progress line follows: the largest one-message
     /// point measured, else the largest point.
     fn progress_point(&self) -> usize {
@@ -2356,8 +2371,28 @@ impl Roster {
     }
 }
 
+/// Orders over the contenders actually measured at a point. Filtering a
+/// larger design afterward can unbalance both positions and predecessors.
+fn participating_orders_for(roster: &Roster, point_index: usize) -> Vec<Vec<usize>> {
+    let participants: Vec<usize> = roster
+        .algorithms
+        .iter()
+        .enumerate()
+        .filter_map(|(index, &algorithm)| roster.measures_cell(algorithm, point_index).then_some(index))
+        .collect();
+    match participants.len() {
+        0 => Vec::new(),
+        1 => vec![participants],
+        n => williams_orders(n)
+            .into_iter()
+            .map(|order| order.into_iter().map(|rank| participants[rank]).collect())
+            .collect(),
+    }
+}
+
 /// Orders over the contenders actually called in a use case. Filtering a
 /// larger design afterward can unbalance both positions and predecessors.
+#[cfg(test)]
 fn participating_orders(algorithms: &[Algorithm], use_case: UseCase) -> Vec<Vec<usize>> {
     let participants: Vec<usize> = algorithms
         .iter()
@@ -2469,6 +2504,8 @@ cell sampled in a share of them.
                                    \"interleaved 256\", \"continuous 64 KiB\",
                                    \"continuous batch 1024\"); with
                                    --contenders only
+  --cells KEY|LABEL;...            measure only these exact (contender, point)
+                                   cells (used by check's second stage)
   --rounds N                       N sample rounds (default 96; --quick 24)
   --for-regression-check           the visits a regression check's run takes
                                    (regress passes it): a cell after a gap in
@@ -2527,6 +2564,7 @@ struct Options {
     selection: Selection,
     explicit: Vec<Algorithm>,
     points: Option<Vec<usize>>,
+    cells: Option<(String, std::collections::BTreeSet<(Algorithm, usize)>)>,
     rounds: Option<usize>,
     quick: bool,
     sizes: Sizes,
@@ -2619,7 +2657,7 @@ impl Sizes {
             for &p in roster
                 .points
                 .iter()
-                .filter(|&&p| algorithm.takes_part(POINTS[p].use_case))
+                .filter(|&&p| roster.measures_cell(*algorithm, p))
             {
                 writeln!(
                     out,
@@ -2712,7 +2750,25 @@ fn sizes_context(
             threads.map_or("one a CPU".to_owned(), |n| n.to_string()),
         ),
     ]
-    .into()
+    .into_iter()
+    .chain(roster.cells.as_ref().map(|cells| {
+        (
+            "cells".to_owned(),
+            cells
+                .iter()
+                .map(|&(a, p)| {
+                    format!(
+                        "{}|{}{}",
+                        a.key(),
+                        POINTS[p].use_case.label_prefix(),
+                        POINTS[p].label
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(";"),
+        )
+    }))
+    .collect()
 }
 
 /// The cache file for a context: in $XDG_CACHE_HOME/bench-hashes, or
@@ -2887,6 +2943,7 @@ fn parse_arguments() -> Options {
                 value
             })
     };
+    let cells_spec = take_value("--cells");
     let points = take_value("--points").map(|list| {
         let mut indices: Vec<usize> = list.split(',').map(point_named).collect();
         indices.sort_unstable();
@@ -2946,15 +3003,31 @@ fn parse_arguments() -> Options {
         }
     };
 
-    let (selection, explicit) = parse_selection(&arguments);
-    assert!(
-        (points.is_none() && rounds.is_none()) || selection == Selection::Explicit,
-        "--points and --rounds narrow a --contenders run\n\n{USAGE}"
-    );
+    let (selection, explicit, points, cells) = if let Some(spec) = cells_spec {
+        assert!(
+            arguments.is_empty() && points.is_none() && !quick,
+            "--cells stands in place of --contenders, --points, --all, --quick and --list\n\n{USAGE}"
+        );
+        let (algorithms, point_indices, cell_set) = parse_cells(&spec);
+        (
+            Selection::Explicit,
+            algorithms,
+            Some(point_indices),
+            Some((spec, cell_set)),
+        )
+    } else {
+        let (selection, explicit) = parse_selection(&arguments);
+        assert!(
+            (points.is_none() && rounds.is_none()) || selection == Selection::Explicit,
+            "--points and --rounds narrow a --contenders run\n\n{USAGE}"
+        );
+        (selection, explicit, points, None)
+    };
     Options {
         selection,
         explicit,
         points,
+        cells,
         rounds,
         quick,
         sizes,
@@ -3028,6 +3101,48 @@ fn point_if_named(name: &str) -> Option<usize> {
     POINTS
         .iter()
         .position(|point| point.label == label && point.use_case.label_prefix() == prefix)
+}
+
+/// Parse `--cells KEY|POINT;...` into ascending unique algorithms, ascending
+/// unique POINTS indices, and the exact `(algorithm, point_index)` set.
+fn parse_cells(
+    spec: &str,
+) -> (
+    Vec<Algorithm>,
+    Vec<usize>,
+    std::collections::BTreeSet<(Algorithm, usize)>,
+) {
+    let mut cell_set = std::collections::BTreeSet::new();
+    for entry in spec.split(';').map(str::trim).filter(|s| !s.is_empty()) {
+        let (key, label) = entry.split_once('|').unwrap_or_else(|| {
+            panic!("--cells: expected KEY|POINT, got {entry:?}\n\n{USAGE}")
+        });
+        let algorithm = Algorithm::ALL
+            .into_iter()
+            .find(|a| a.key() == key.trim())
+            .unwrap_or_else(|| {
+                eprintln!("unknown contender {key:?}\n\n{USAGE}");
+                std::process::exit(2);
+            });
+        let point = point_named(label);
+        assert!(
+            algorithm.takes_part(POINTS[point].use_case),
+            "--cells: {} does not take part in {}{}",
+            algorithm.key(),
+            POINTS[point].use_case.label_prefix(),
+            POINTS[point].label
+        );
+        cell_set.insert((algorithm, point));
+    }
+    assert!(!cell_set.is_empty(), "--cells needs at least one cell\n\n{USAGE}");
+    let algorithms: Vec<Algorithm> = Algorithm::ALL
+        .into_iter()
+        .filter(|a| cell_set.iter().any(|&(ca, _)| ca == *a))
+        .collect();
+    let mut points: Vec<usize> = cell_set.iter().map(|&(_, p)| p).collect();
+    points.sort_unstable();
+    points.dedup();
+    (algorithms, points, cell_set)
 }
 
 fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
@@ -3193,6 +3308,7 @@ fn main() {
         selection,
         explicit,
         points,
+        cells,
         rounds,
         quick,
         sizes,
@@ -3218,14 +3334,17 @@ fn main() {
                 .collect(),
             String::from("every contender available on this machine"),
         ),
-        Selection::Explicit => {
-            let keys = explicit
-                .iter()
-                .map(|algorithm| algorithm.key())
-                .collect::<Vec<_>>()
-                .join(",");
-            (explicit, format!("--contenders {keys}"))
-        }
+        Selection::Explicit => match &cells {
+            Some((spec, _)) => (explicit, format!("--cells {spec}")),
+            None => {
+                let keys = explicit
+                    .iter()
+                    .map(|algorithm| algorithm.key())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                (explicit, format!("--contenders {keys}"))
+            }
+        },
     };
     // The thread count is the run's, so its contenders' note names it.
     let selection_note = match threads {
@@ -3252,6 +3371,7 @@ fn main() {
     let idle_control = IdleControl::detect(std::path::Path::new("/sys/devices/system/cpu"));
     machine.idle_control = IdleControl::describe(idle_control.as_ref());
     let mut roster = Roster::new(algorithms, quick, points, rounds, visits, idle_control);
+    roster.cells = cells.map(|(_, set)| set);
     roster.train = train;
     roster.nonstop_visits = nonstop_visits;
     // Sizes from the cache where a calibration in this very context left
@@ -3390,13 +3510,6 @@ fn assert_orders_balanced(rows: &[Vec<usize>], n: usize) {
     }
 }
 
-/// The measured cell of a contender that takes part at this point.
-fn cell(results: &Results, algorithm_index: usize, point_index: usize) -> &Cell {
-    results[algorithm_index][point_index]
-        .as_ref()
-        .expect("the contender takes part in this point's use case")
-}
-
 fn measure_all(
     roster: &Roster,
     sizes: &Sizes,
@@ -3426,9 +3539,10 @@ fn measure_all(
     let other = make_input_seeded(
         largest(&|index| {
             roster.algorithms.iter().any(|&a| {
-                Placement::ALL
-                    .into_iter()
-                    .any(|pl| Scenario::Shared(pl).measures(a, POINTS[index].use_case))
+                roster.measures_cell(a, index)
+                    && Placement::ALL
+                        .into_iter()
+                        .any(|pl| Scenario::Shared(pl).measures(a, POINTS[index].use_case))
             })
         }),
         1,
@@ -3504,9 +3618,8 @@ fn measure_all(
         shared_cpu: std::array::from_fn(|_| vec![vec![Vec::new(); POINT_COUNT]; roster.len()]),
     };
     let mut batch_iterations: Vec<Vec<usize>> = vec![vec![1usize; POINT_COUNT]; roster.len()];
-    let point_orders: Vec<_> = POINTS
-        .iter()
-        .map(|point| participating_orders(&roster.algorithms, point.use_case))
+    let point_orders: Vec<_> = (0..POINT_COUNT)
+        .map(|point_index| participating_orders_for(roster, point_index))
         .collect();
     /* Other programs' load: clocks reads it between samples, by itself. */
     clocks::load::tick();
@@ -3533,8 +3646,7 @@ fn measure_all(
         for (point_index, point) in POINTS.iter().enumerate() {
             for algorithm_index in 0..roster.len() {
                 let algorithm = roster.algorithms[algorithm_index];
-                if algorithm.takes_part(point.use_case)
-                    && roster.measures(point_index)
+                if roster.measures_cell(algorithm, point_index)
                     && point.use_case.pattern_key() == pattern
                     && lent_twin(roster, algorithm, point_index).is_none()
                 {
@@ -3747,7 +3859,7 @@ fn measure_all(
     for a in 0..roster.len() {
         for p in 0..POINT_COUNT {
             if let Some(t) = roster
-                .measures(p)
+                .measures_cell(roster.algorithms[a], p)
                 .then(|| lent_twin(roster, roster.algorithms[a], p))
                 .flatten()
             {
@@ -3776,9 +3888,7 @@ fn measure_all(
 
     for algorithm_index in 0..roster.len() {
         for (size_index, point) in POINTS.iter().enumerate() {
-            if !roster.algorithms[algorithm_index].takes_part(point.use_case)
-                || !roster.measures(size_index)
-            {
+            if !roster.measures_cell(roster.algorithms[algorithm_index], size_index) {
                 continue;
             }
             let solo = &samples.solo[algorithm_index][size_index];
@@ -5426,7 +5536,7 @@ fn twins_take_their_sizes(roster: &Roster, batch_iterations: &mut [Vec<usize>]) 
     for (a, sizes) in batch_iterations.iter_mut().enumerate() {
         for p in 0..POINT_COUNT {
             if let Some(t) = roster
-                .measures(p)
+                .measures_cell(roster.algorithms[a], p)
                 .then(|| lent_twin(roster, roster.algorithms[a], p))
                 .flatten()
             {
@@ -5454,7 +5564,7 @@ fn lent_twin(roster: &Roster, algorithm: Algorithm, point_index: usize) -> Optio
     let twin = POINTS
         .iter()
         .position(|p| p.use_case == lent && p.label == point.label)?;
-    roster.measures(twin).then_some(twin)
+    roster.measures_cell(algorithm, twin).then_some(twin)
 }
 
 #[inline(always)]
@@ -7633,6 +7743,7 @@ enum RegressScope {
         contenders: String,
         points: Option<String>,
     },
+    Cells(String),
 }
 
 impl RegressScope {
@@ -7663,6 +7774,9 @@ impl RegressScope {
                 ]
                 .concat()
             }
+            RegressScope::Cells(cells) => {
+                [vec!["--cells".into(), cells.clone()], rounds()].concat()
+            }
         }
     }
 
@@ -7675,6 +7789,7 @@ impl RegressScope {
                     .as_ref()
                     .map_or(String::new(), |p| format!(" --points {p:?}"))
             ),
+            RegressScope::Cells(cells) => format!("--cells {cells:?}"),
         }
     }
 }
@@ -7922,10 +8037,10 @@ fn judged_line(word: &str, key: &str, ratio_permille: u64, pairs: &[u64]) -> Str
 }
 
 fn regress_command(arguments: &[String]) -> i32 {
-    let usage = "usage: bench-hashes regress [--contenders A,B [--points P,Q]] [--judge CELL;CELL] [--pairs N] [--rounds K] [--keep DIR] [--unpinned] OLD_EXE... -- NEW_EXE... (pair i runs the i-th of each, round robin; bench-hashes check builds the sides and runs the cells its caller names; each pair's runs take their samples after a gap on one CPU, pairs alternating core parity, unless --unpinned)";
+    let usage = "usage: bench-hashes regress [--contenders A,B [--points P,Q] | --cells KEY|P;...] [--judge CELL;CELL] [--pairs N] [--rounds K] [--keep DIR] [--unpinned] OLD_EXE... -- NEW_EXE... (pair i runs the i-th of each, round robin; bench-hashes check builds the sides and runs the cells its caller names; each pair's runs take their samples after a gap on one CPU, pairs alternating core parity, unless --unpinned)";
     let mut arguments = arguments;
-    let (mut contenders, mut points, mut pairs, mut chosen_rounds, mut keep) =
-        (None, None, REGRESS_PAIRS, None, None);
+    let (mut contenders, mut points, mut cells, mut pairs, mut chosen_rounds, mut keep) =
+        (None, None, None, REGRESS_PAIRS, None, None);
     let mut only: Option<Vec<String>> = None;
     let mut unpinned = false;
     while let Some(name) = arguments
@@ -7949,6 +8064,7 @@ fn regress_command(arguments: &[String]) -> i32 {
         match name.as_str() {
             "--contenders" => contenders = Some(value.clone()),
             "--points" => points = Some(value.clone()),
+            "--cells" => cells = Some(value.clone()),
             "--pairs" => pairs = count(),
             "--rounds" => chosen_rounds = Some(count()),
             "--keep" => keep = Some(std::path::PathBuf::from(&value)),
@@ -7975,12 +8091,17 @@ fn regress_command(arguments: &[String]) -> i32 {
         return 2;
     }
     assert!(
+        cells.is_none() || (contenders.is_none() && points.is_none()),
+        "--cells stands in place of --contenders and --points\n{usage}"
+    );
+    assert!(
         points.is_none() || contenders.is_some(),
         "--points narrows a --contenders check\n{usage}"
     );
-    let scope = match contenders {
-        Some(contenders) => RegressScope::Chosen { contenders, points },
-        None => RegressScope::Full,
+    let scope = match (cells, contenders) {
+        (Some(cells), _) => RegressScope::Cells(cells),
+        (None, Some(contenders)) => RegressScope::Chosen { contenders, points },
+        (None, None) => RegressScope::Full,
     };
     let split = arguments.iter().position(|a| a == "--").expect(usage);
     let (old_exes, new_exes) = (&arguments[..split], &arguments[split + 1..]);
@@ -8214,7 +8335,10 @@ fn regress_command(arguments: &[String]) -> i32 {
     // the moved, and those slower beyond the wall margin, by their rank.
     let mut moved_suspects: Vec<(usize, &String)> = Vec::new();
     let mut slower_suspects: Vec<(usize, &String)> = Vec::new();
-    let moved = instructions_moved(&instruction_ratios, pairs);
+    let moved: Vec<(String, u64)> = instructions_moved(&instruction_ratios, pairs)
+        .into_iter()
+        .filter(|(k, _)| only.as_ref().is_none_or(|only| only.contains(k)))
+        .collect();
     for (i, (key, judgment)) in judged.into_iter().zip(judgments).enumerate() {
         // A row whose measurement an earlier row holds (an owned cell
         // measured as its lent twin): its verdict printed, not counted again.
@@ -8634,15 +8758,24 @@ fn append_table(
     scenario: Scenario,
     use_case: UseCase,
 ) {
+    let points: Vec<usize> = use_case
+        .points()
+        .filter(|&index| {
+            roster.measures(index)
+                && (0..roster.len()).any(|a| {
+                    roster.measures_cell(roster.algorithms[a], index)
+                        && scenario.measures(roster.algorithms[a], use_case)
+                })
+        })
+        .collect();
     let contenders: Vec<usize> = (0..roster.len())
         .filter(|&index| {
             roster.algorithms[index].takes_part(use_case)
                 && scenario.measures(roster.algorithms[index], use_case)
+                && points
+                    .iter()
+                    .any(|&p| roster.measures_cell(roster.algorithms[index], p))
         })
-        .collect();
-    let points: Vec<usize> = use_case
-        .points()
-        .filter(|&index| roster.measures(index))
         .collect();
     if points.is_empty() || contenders.is_empty() {
         return;
@@ -8667,8 +8800,13 @@ fn append_table(
     for &point_index in &points {
         write!(output, "  {:<8}", POINTS[point_index].label).unwrap();
         for &algorithm_index in &contenders {
-            let statistics = cell(results, algorithm_index, point_index).get(scenario);
-            write!(output, "  {:>13} ", statistics.format_ns(1)).unwrap();
+            match &results[algorithm_index][point_index] {
+                Some(c) => {
+                    let statistics = c.get(scenario);
+                    write!(output, "  {:>13} ", statistics.format_ns(1)).unwrap();
+                }
+                None => write!(output, "  {:>13} ", "-").unwrap(),
+            }
         }
         writeln!(output).unwrap();
     }
@@ -11335,5 +11473,95 @@ mod correctness_tests {
         let sample = take_sample(Algorithm::Blake3ServilSt, &input, point, 3);
         assert!(clocks::since_ns(started) >= 3 * GAP_NS);
         assert!(sample.elapsed_ns < GAP_NS, "{}", sample.elapsed_ns);
+    }
+
+    #[test]
+    fn parse_cells_narrows_roster_orders_and_lent_twins() {
+        let p64 = point_named("64 B");
+        let p1024 = point_named("1024");
+        let p_cont64 = point_named("continuous 64 B");
+        let p_lent64 = point_named("lent 64 B");
+
+        let (algorithms, points, cell_set) = parse_cells(
+            "blake3-servil-mt|1024;blake3-servil-st|64 B;blake3-servil-st|continuous 64 B;blake3-servil-mt|lent 64 B",
+        );
+        assert_eq!(
+            algorithms,
+            vec![Algorithm::Blake3ServilSt, Algorithm::Blake3ServilMt]
+        );
+        assert_eq!(points.len(), 4);
+        let mut roster = Roster::new(
+            algorithms,
+            false,
+            Some(points),
+            Some(2),
+            &TO_CHECK_FOR_REGRESSIONS,
+            None,
+        );
+        roster.cells = Some(cell_set);
+
+        assert!(roster.measures_cell(Algorithm::Blake3ServilSt, p64));
+        assert!(!roster.measures_cell(Algorithm::Blake3ServilMt, p64));
+        assert!(!roster.measures_cell(Algorithm::Blake3ServilSt, p1024));
+        assert!(roster.measures_cell(Algorithm::Blake3ServilMt, p1024));
+
+        // Only st participates at 64 B; only mt participates at 1024.
+        assert_eq!(participating_orders_for(&roster, p64), vec![vec![0]]);
+        assert_eq!(participating_orders_for(&roster, p1024), vec![vec![1]]);
+
+        // Even though `lent 64 B` is measured for mt, it is NOT measured for st,
+        // so st's `continuous 64 B` must measure itself rather than copy an empty twin.
+        assert_eq!(lent_twin(&roster, Algorithm::Blake3ServilSt, p_cont64), None);
+
+        // Once st also includes `lent 64 B`, its twin resolves cleanly.
+        roster
+            .cells
+            .as_mut()
+            .unwrap()
+            .insert((Algorithm::Blake3ServilSt, p_lent64));
+        assert_eq!(
+            lent_twin(&roster, Algorithm::Blake3ServilSt, p_cont64),
+            Some(p_lent64)
+        );
+
+        // Sparse `append_table`: st measured at 64 B, mt measured at 128 B
+        // (same use case, disjoint contenders per point) renders "-" for
+        // unmeasured cells without panicking.
+        let p128 = point_named("128 B");
+        let mut sparse_cells = std::collections::BTreeSet::new();
+        sparse_cells.insert((Algorithm::Blake3ServilSt, p64));
+        sparse_cells.insert((Algorithm::Blake3ServilMt, p128));
+        let mut sparse_roster = Roster::new(
+            vec![Algorithm::Blake3ServilSt, Algorithm::Blake3ServilMt],
+            false,
+            Some(vec![p64, p128]),
+            Some(1),
+            &TO_CHECK_FOR_REGRESSIONS,
+            None,
+        );
+        sparse_roster.cells = Some(sparse_cells);
+        let sample = Measured::new(100, 64);
+        let cell_val = Cell {
+            solo: Mean::of(&[sample]),
+            shared: Placement::ALL.map(|_| None),
+        };
+        let mut results: Results = vec![vec![None; POINT_COUNT]; 2];
+        results[0][p64] = Some(cell_val);
+        results[1][p128] = Some(cell_val);
+        let mut out = String::new();
+        append_table(&mut out, &sparse_roster, &results, Scenario::Solo, UseCase::OneMessage);
+        assert!(out.contains("64 B") && out.contains("128 B") && out.contains(" - "));
+
+        let scope = RegressScope::Cells("blake3-servil-st|64 B;blake3-servil-mt|128 B".to_owned());
+        assert_eq!(
+            scope.arguments(12),
+            vec![
+                "--cells",
+                "blake3-servil-st|64 B;blake3-servil-mt|128 B",
+                "--for-regression-check",
+                "--rounds",
+                "12",
+            ]
+        );
     }
 }

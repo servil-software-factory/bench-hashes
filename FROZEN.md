@@ -30,7 +30,8 @@ read as alike. The
 documents that explain the benchmark (README, METHODOLOGY, CONTRIBUTING,
 the notes) may still change, to say it better.
 
-**Changes for the next release, November 20–23, 2026** (Devon Jonte's decisions, each dated):
+**Changes for the next release, November 20–24, 2026** (Devon Jonte's decisions, each dated):
+- **The second stage of `bench-hashes check` measures exact suspect cells** (Devon Jonte, November 24, 2026; bench-hashes #210). Previously, Stage 2 passed the Cartesian product of all suspect contenders and all suspect points (`--contenders ... --points ...`), expanding `8` suspects across `st` and `mt` to `17–28` cells (doubling Stage 2 runtime and recording unjudged non-suspect cells alongside the suspects). `bench-hashes` and `regress` now accept `--cells KEY|POINT;...` to measure only the exact suspect `(contender, point)` cells; `check` uses `--cells` whenever both sides run this bench (falling back to `--contenders`/`--points` under `--old-bench`), and `regress --judge` restricts reported instruction moves to the judged cells. Stage 1, published benchmarks, and the statistical judgment rules are unchanged.
 - **The overview shows a machine's newest record** (Devon Jonte, November
   20, 2026; Zooko approved it). A machine keeps a folder a kernel, so it
   can hold several records, and a family's column opened on the chosen
