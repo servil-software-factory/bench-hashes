@@ -107,10 +107,6 @@ criteria = "agent-safe-to-deploy"
 version = "0.14.7"
 criteria = "agent-safe-to-deploy"
 
-[[exemptions.getrandom]]
-version = "0.2.17"
-criteria = "agent-safe-to-deploy"
-
 [[exemptions.hybrid-array]]
 version = "0.4.15"
 criteria = "agent-safe-to-deploy"
@@ -133,10 +129,6 @@ criteria = "agent-safe-to-deploy"
 
 [[exemptions.windows-sys]]
 version = "0.52.0"
-criteria = "agent-safe-to-deploy"
-
-[[exemptions.windows-targets]]
-version = "0.52.6"
 criteria = "agent-safe-to-deploy"
 
 [[exemptions.windows_aarch64_gnullvm]]
