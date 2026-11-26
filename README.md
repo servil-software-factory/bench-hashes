@@ -142,7 +142,7 @@ It hashes fixed files from 4 KiB to 1 GiB and two directory trees, with
 the files in the page cache (read moments before) and, on Linux and
 macOS, evicted from it before each run (read from storage):
 
-    python3 tools/b3sum-contenders.py /path/to/BLAKE3-fork /tmp/b3c |
+    python3 tools/b3sum-contenders.py /path/to/b3sum /tmp/b3c |
         tr '\n' '\0' | xargs -0 cargo run --release -- b3sum --files ~/b3sum-files
 
 A contender is `NAME=COMMAND`, a `b3sum` and its flags, or any program
@@ -152,7 +152,9 @@ run outside the timed process, for a command that writes files beside its
 hashes (`b3sum --outboard {OUT}`).
 `tools/b3sum-contenders.py` builds official
 BLAKE3's `b3sum` 1.8.7 and
-BLAKE3-Servil's at given commits, official's and (for one commit) BLAKE3-Servil's
+BLAKE3-Servil's at given commits (from a standalone
+`servil-software-factory/b3sum` checkout, or a pre-split `BLAKE3` checkout
+for historical commits), official's and (for one commit) BLAKE3-Servil's
 on one thread too (`--num-threads 1`), and adds the system's `sha256sum`, `sha1sum` and
 `md5sum`, the programs a user chooses between. The first contender
 is the one the others are compared with. `--files` chooses where the files live:
@@ -163,7 +165,7 @@ selects one cache state. `tools/b3sum-contenders.py --outboard` adds
 BLAKE3-Servil's `--outboard {OUT}` forms at both thread budgets beside the
 hash-only builds. For the outboard regression cells:
 
-    python3 tools/b3sum-contenders.py --outboard /path/to/BLAKE3-fork /tmp/b3c |
+    python3 tools/b3sum-contenders.py --outboard /path/to/b3sum /tmp/b3c |
         tr '\n' '\0' | xargs -0 cargo run --release -- b3sum --files ~/b3sum-files \
         --cache warm --input '1 MiB' --input 'mixed tree, 1000 files, 74 MiB' --input '1 GiB'
     # The large cold cell is a separate command: --cache cold --input '1 GiB'.

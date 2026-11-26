@@ -1,12 +1,14 @@
 """Build b3sum contenders for `bench-hashes b3sum` into DIR, each named for what it is:
-    python3 tools/b3sum-contenders.py [--outboard] FORK DIR [COMMIT...]
+    python3 tools/b3sum-contenders.py [--outboard] REPO DIR [COMMIT...]
 With --outboard, each BLAKE3-Servil build also has an --outboard {OUT} form,
 beside its unchanged hash-only form (the added-cost baseline).
-FORK is a checkout of github.com/servil-software-factory/BLAKE3.
+REPO is a checkout of github.com/servil-software-factory/b3sum (whose Cargo.toml
+sits at the repository root), or a pre-split github.com/servil-software-factory/BLAKE3
+checkout (whose manifest sits at b3sum/Cargo.toml) for historical commits.
   DIR/b3sum-official-1.8.7  official BLAKE3's b3sum from crates.io (also as
                             official-1-thread, the same build with
                             --num-threads 1)
-  DIR/b3sum-COMMIT          BLAKE3-Servil's b3sum at each COMMIT (default: FORK's HEAD),
+  DIR/b3sum-COMMIT          BLAKE3-Servil's b3sum at each COMMIT (default: REPO's HEAD),
                             built from a clean worktree of that commit as its
                             README recommends: statically linked on Linux;
                             named b3sum where one COMMIT is given (with
@@ -29,7 +31,7 @@ asked for. bench-hashes b3sum runs a contender named more than once one build a
 round.
 Prints the contenders for bench-hashes b3sum, one NAME=COMMAND a line, official
 first; pass each line as one argument (a command may hold flags):
-    python3 tools/b3sum-contenders.py FORK DIR | tr '\\n' '\\0' | xargs -0 cargo run --release -- b3sum --files FILES
+    python3 tools/b3sum-contenders.py REPO DIR | tr '\\n' '\\0' | xargs -0 cargo run --release -- b3sum --files FILES
 """
 
 import glob
@@ -38,6 +40,7 @@ import random
 import shutil
 import subprocess
 import sys
+import tomllib
 import zlib
 
 
@@ -80,6 +83,24 @@ def relink(name, manifest, built, flags="", *, target, host, layouts, binary="b3
             shutil.copy(os.path.join(build, host, "release", binary), path)
         contenders.append(f"{name}={path}")
     return contenders
+
+
+def b3sum_manifest(worktree):
+    """Locate b3sum's Cargo.toml inside a checkout: root `Cargo.toml` for the
+    standalone `servil-software-factory/b3sum` repository (package `b3sums` or
+    `b3sum`), or legacy `b3sum/Cargo.toml` for pre-split `BLAKE3` commits."""
+    for candidate in (os.path.join(worktree, "Cargo.toml"), os.path.join(worktree, "b3sum", "Cargo.toml")):
+        if not os.path.isfile(candidate):
+            continue
+        with open(candidate, "rb") as f:
+            pkg = tomllib.load(f).get("package", {})
+        if pkg.get("name") in ("b3sums", "b3sum"):
+            return candidate
+    raise SystemExit(
+        f"b3sum-contenders: no b3sum manifest in {worktree} "
+        f"(expected root Cargo.toml for package b3sums from servil-software-factory/b3sum, "
+        f"or legacy b3sum/Cargo.toml from a pre-split BLAKE3 commit)"
+    )
 
 
 def servil_forms(builds, one, outboard):
@@ -134,12 +155,13 @@ def main():
         # whether or not an earlier run left the build in DIR.
         if not os.path.isdir(worktree):
             run("git", "-C", fork, "worktree", "add", "--detach", "--quiet", worktree, commit)
+        manifest = b3sum_manifest(worktree)
         if not os.access(built, os.X_OK):
-            run("cargo", "build", "--quiet", "--release", "--manifest-path", os.path.join(worktree, "b3sum", "Cargo.toml"),
+            run("cargo", "build", "--quiet", "--release", "--locked", "--manifest-path", manifest, "--bin", "b3sum",
                 "--target", host, env={"RUSTFLAGS": static, "CARGO_TARGET_DIR": os.path.join(target, "build")})
             shutil.copy(os.path.join(target, "build", host, "release", "b3sum"), built)
         one = len(revs) == 1
-        builds = relink("b3sum" if one else f"b3sum-{commit}", os.path.join(worktree, "b3sum", "Cargo.toml"), built, static, **layout)
+        builds = relink("b3sum" if one else f"b3sum-{commit}", manifest, built, static, **layout)
         contenders += servil_forms(builds, one, outboard)
     # The system's own sum programs, as a user has them (whichever implementation
     # the platform ships: GNU or uutils coreutils, BSD).
