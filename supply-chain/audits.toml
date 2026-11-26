@@ -64,6 +64,12 @@ criteria = "agent-safe-to-deploy"
 version = "0.11.3"
 notes = "Full line-by-line review of src/{lib,digest,mac,xof_fixed,block_api.rs,block_api/*,buffer_macros/*}.rs (no_std, forbid(unsafe_code), no build.rs). Pure cryptographic digest/MAC traits, macros, and wrappers; MAC comparison delegates to ctutils::CtEq with ZeroizeOnDrop."
 
+[[audits.getrandom]]
+who = "Devon Jonte (AI coding agent)"
+criteria = "agent-safe-to-deploy"
+version = "0.2.17"
+notes = "Line-by-line review of Cargo.toml and all 24 src/*.rs files (1,739 LOC, #![no_std], build = false). Thin OS CSPRNG bindings: Linux/Android SYS_getrandom with sys_fill_exact EINTR/short-read handling and /dev/urandom fallback only after POLLIN on /dev/random (O_CLOEXEC, pthread_mutex_t); macOS/OpenBSD getentropy in 256-byte chunks; Windows BCryptGenRandom in u32::MAX chunks; NetBSD Release/Acquire Weak dlsym or KERN_ARND; Solaris GRND_RANDOM; rdrand CPUID/AMD-family-17h/self_test checks. No network, no unexpected I/O, sound MaybeUninit initialization contract."
+
 [[audits.keccak]]
 who = "Devon Jonte <devonjonte@users.noreply.github.com>"
 criteria = "agent-safe-to-deploy"
@@ -99,3 +105,9 @@ who = "Devon Jonte <devonjonte@users.noreply.github.com>"
 criteria = "agent-safe-to-deploy"
 delta = "0.9.4 -> 0.9.5"
 notes = "Doc-comment and Cargo.toml metadata changes only; zero executable code changes."
+
+[[audits.windows-targets]]
+who = "Devon Jonte (AI coding agent)"
+criteria = "agent-safe-to-deploy"
+version = "0.52.6"
+notes = "Line-by-line review of Cargo.toml and src/lib.rs (55 LOC, #![no_std], build = false, zero unsafe blocks, no binary artifacts). Single declarative macro_rules! link! expanding to #[link] extern fn declarations; target-specific prebuilt import libraries live in separate windows_* crates which remain exempted."
