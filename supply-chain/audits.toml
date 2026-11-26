@@ -88,6 +88,12 @@ criteria = "agent-safe-to-deploy"
 version = "0.11.0"
 notes = "Full line-by-line review of src/{lib,block_api}.rs (413 lines, no_std, forbid(unsafe_code), no build.rs). Standard FIPS 202 SHA-3/SHAKE/Keccak sponge wrappers over keccak with bounds-checked xor_block."
 
+[[audits.typenum]]
+who = "Devon Jonte <devonjonte@users.noreply.github.com>"
+criteria = "agent-safe-to-deploy"
+version = "1.20.1"
+notes = "Reviewed Cargo.toml (build = false, zero default dependencies) and src/ (no_std, forbid(unsafe_code), zero OS/FS/network/FFI). Pure compile-time type-level integer types, traits, and pre-generated constant/operator definitions."
+
 [[audits.version_check]]
 who = "Devon Jonte <devonjonte@users.noreply.github.com>"
 criteria = "agent-safe-to-deploy"

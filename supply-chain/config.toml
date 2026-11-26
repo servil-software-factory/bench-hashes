@@ -127,10 +127,6 @@ criteria = "agent-safe-to-deploy"
 version = "0.11.0"
 criteria = "agent-safe-to-deploy"
 
-[[exemptions.typenum]]
-version = "1.20.1"
-criteria = "agent-safe-to-deploy"
-
 [[exemptions.wasi]]
 version = "0.11.1+wasi-snapshot-preview1"
 criteria = "agent-safe-to-deploy"
