@@ -1068,8 +1068,144 @@ pub(crate) fn regress_command(arguments: &[String]) -> i32 {
             println!("regress: suspects: {}", suspects.join(";"));
         }
     }
+    let measures_servil_mt = pairs_means
+        .keys()
+        .any(|k| k.starts_with("blake3-servil-mt|"));
+    if only.is_none()
+        && measures_servil_mt
+        && supports_pipeline_lifecycle(&old_exes[0])
+        && supports_pipeline_lifecycle(&new_exes[0])
+    {
+        if !run_pipeline_lifecycle_check(old_exes, new_exes) {
+            slower += 1;
+            println!("regress: REGRESSION: Pipeline cold create/drop lifecycle regressed");
+        }
+    }
     println!("{power}");
     i32::from(slower > 0)
+}
+
+/// Minimum RSS delta (bytes) and relative growth (permille) required in every
+/// pair to flag an eager-faulting / memory-lifecycle regression.
+const LIFECYCLE_RSS_MIN_DELTA_BYTES: u64 = 32 * 1024 * 1024;
+const LIFECYCLE_RSS_MARGIN_PERMILLE: u64 = 250;
+/// Minimum wall-time delta (ns) and relative growth (permille) required in
+/// every pair to flag a cold Pipeline create/drop latency regression without
+/// false alarms from 1-2 ms child-process startup jitter.
+const LIFECYCLE_WALL_MIN_DELTA_NS: u64 = 10_000_000;
+const LIFECYCLE_WALL_MARGIN_PERMILLE: u64 = 500;
+const LIFECYCLE_PAIRS: usize = 4;
+
+fn supports_pipeline_lifecycle(exe: &str) -> bool {
+    std::process::Command::new(exe)
+        .args(["pipeline-lifecycle", "--check"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct LifecycleVerdict {
+    wall_slower: bool,
+    rss_higher: bool,
+}
+
+fn judge_lifecycle_pairs(wall: &[(u64, u64)], rss: &[(u64, u64)]) -> LifecycleVerdict {
+    let wall_slower = !wall.is_empty()
+        && wall.iter().all(|&(o, n)| {
+            n.saturating_sub(o) >= LIFECYCLE_WALL_MIN_DELTA_NS
+                && u128::from(n) * 1000
+                    >= u128::from(o) * u128::from(1000 + LIFECYCLE_WALL_MARGIN_PERMILLE)
+        });
+    let rss_higher = !rss.is_empty()
+        && rss.iter().all(|&(o, n)| {
+            n.saturating_sub(o) >= LIFECYCLE_RSS_MIN_DELTA_BYTES
+                && u128::from(n) * 1000
+                    >= u128::from(o) * u128::from(1000 + LIFECYCLE_RSS_MARGIN_PERMILLE)
+        });
+    LifecycleVerdict {
+        wall_slower,
+        rss_higher,
+    }
+}
+
+fn median_u64(values: &[u64]) -> u64 {
+    let mut sorted = values.to_vec();
+    sorted.sort_unstable();
+    sorted[sorted.len() / 2]
+}
+
+fn run_pipeline_lifecycle_once(exe: &str, side: &str) -> (u64, Option<u64>) {
+    let mut command = std::process::Command::new(exe);
+    let run = clocks::child::run(
+        command
+            .arg("pipeline-lifecycle")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped()),
+    );
+    assert!(
+        run.success(),
+        "regress: {side} {exe} pipeline-lifecycle failed ({})",
+        run.ended
+    );
+    (run.wall_ns, run.max_rss_bytes)
+}
+
+/// Compare cold `Pipeline::new(rooms=4096)` + 1 message + `Drop` across
+/// alternating fresh child processes, returning `true` when both cold wall time
+/// and peak RSS stay within bounds (bench-hashes #303).
+fn run_pipeline_lifecycle_check(old_exes: &[String], new_exes: &[String]) -> bool {
+    let mut wall_pairs = Vec::with_capacity(LIFECYCLE_PAIRS);
+    let mut rss_pairs = Vec::with_capacity(LIFECYCLE_PAIRS);
+    for pair in 0..LIFECYCLE_PAIRS {
+        let old_exe = &old_exes[pair % old_exes.len()];
+        let new_exe = &new_exes[pair % new_exes.len()];
+        let ((ow, or), (nw, nr)) = if pair % 2 == 0 {
+            let o = run_pipeline_lifecycle_once(old_exe, "old");
+            (o, run_pipeline_lifecycle_once(new_exe, "new"))
+        } else {
+            let n = run_pipeline_lifecycle_once(new_exe, "new");
+            (run_pipeline_lifecycle_once(old_exe, "old"), n)
+        };
+        wall_pairs.push((ow, nw));
+        if let (Some(o), Some(n)) = (or, nr) {
+            rss_pairs.push((o, n));
+        }
+    }
+    let verdict = judge_lifecycle_pairs(&wall_pairs, &rss_pairs);
+    let old_w = median_u64(&wall_pairs.iter().map(|&(o, _)| o).collect::<Vec<_>>()) as f64 / 1e6;
+    let new_w = median_u64(&wall_pairs.iter().map(|&(_, n)| n).collect::<Vec<_>>()) as f64 / 1e6;
+    let rss_text = if rss_pairs.is_empty() {
+        "peak RSS unavailable".to_owned()
+    } else {
+        let old_r = median_u64(&rss_pairs.iter().map(|&(o, _)| o).collect::<Vec<_>>()) as f64
+            / (1024.0 * 1024.0);
+        let new_r = median_u64(&rss_pairs.iter().map(|&(_, n)| n).collect::<Vec<_>>()) as f64
+            / (1024.0 * 1024.0);
+        format!("peak RSS {old_r:.1} -> {new_r:.1} MiB")
+    };
+    if verdict.wall_slower || verdict.rss_higher {
+        let mut reasons = Vec::new();
+        if verdict.wall_slower {
+            reasons.push("wall time");
+        }
+        if verdict.rss_higher {
+            reasons.push("peak RSS");
+        }
+        println!(
+            "  SLOWER blake3-servil-mt|lifecycle|PipelineCreateDrop|4096 rooms: wall {old_w:.2} -> {new_w:.2} ms; {rss_text} (regressed: {})",
+            reasons.join(", ")
+        );
+        false
+    } else {
+        println!(
+            "regress: pipeline lifecycle (4096 rooms, {LIFECYCLE_PAIRS} pairs): wall {old_w:.2} -> {new_w:.2} ms; {rss_text} (level)"
+        );
+        true
+    }
 }
 
 /// The cells whose instructions a unit moved beyond INSTRUCTIONS_MARGIN_
@@ -1176,5 +1312,43 @@ mod tests {
             || {},
         );
         assert!(out.starts_with("quiet:"), "{out}");
+    }
+
+    #[test]
+    fn lifecycle_judge_catches_eager_faulting_without_startup_jitter_false_alarms() {
+        const MIB: u64 = 1024 * 1024;
+        const MS: u64 = 1_000_000;
+        // 1. Level lazy create/drop passes.
+        assert_eq!(
+            judge_lifecycle_pairs(&[(2 * MS, 2 * MS); 4], &[(8 * MIB, 8 * MIB); 4],),
+            LifecycleVerdict {
+                wall_slower: false,
+                rss_higher: false,
+            }
+        );
+        // 2. Small child-process startup jitter (+50% relative, < +10 ms absolute) passes.
+        assert_eq!(
+            judge_lifecycle_pairs(&[(2 * MS, 3 * MS); 4], &[(8 * MIB, 12 * MIB); 4],),
+            LifecycleVerdict {
+                wall_slower: false,
+                rss_higher: false,
+            }
+        );
+        // 3. Eager page faulting (+94 ms wall, +256 MiB RSS) fails on both.
+        assert_eq!(
+            judge_lifecycle_pairs(&[(2 * MS, 96 * MS); 4], &[(8 * MIB, 264 * MIB); 4],),
+            LifecycleVerdict {
+                wall_slower: true,
+                rss_higher: true,
+            }
+        );
+        // 4. RSS-only regression (+256 MiB, wall unchanged) fails on RSS.
+        assert_eq!(
+            judge_lifecycle_pairs(&[(2 * MS, 2 * MS); 4], &[(8 * MIB, 264 * MIB); 4],),
+            LifecycleVerdict {
+                wall_slower: false,
+                rss_higher: true,
+            }
+        );
     }
 }
