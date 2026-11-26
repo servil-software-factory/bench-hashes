@@ -294,8 +294,13 @@ fn a_merkle_tree_has_the_root_of_its_layers_hashed_node_by_node() {
     }
     /* RFC 6962's prefix, then the message, in one buffer. */
     let with = |node: Node, m: &[u8]| [&[node.prefix()][..], m].concat();
-    /* The 256-byte-leaf tree, and the packed-leaf trees (32 and 16 bytes). */
-    for point in [0, 5, 7].map(|i| POINTS[UseCase::MerkleTree.points()][i]) {
+    /* The 256-byte-leaf tree, and the packed-leaf trees (32, 16, and 48 bytes). */
+    let merkle_points = &POINTS[UseCase::MerkleTree.points()];
+    for label in ["1024", "65536 x 32 B", "1048576 x 16 B", "65536 x 48 B"] {
+        let point = *merkle_points
+            .iter()
+            .find(|p| p.label == label)
+            .unwrap_or_else(|| panic!("missing MerkleTree point {label}"));
         let leaf_len = point.bytes / point.messages;
         let input = make_input(point.bytes);
         let blake3_root = root(&input, leaf_len, |node, m| {
@@ -486,4 +491,84 @@ fn a_stopped_sides_report_quotes_its_last_words_without_the_progress() {
             && report.contains("line 29\n"),
         "{report}"
     );
+}
+
+#[test]
+fn packed_48_merkle_cells_parse_and_have_distinct_identities() {
+    let (algs, pts, cells) =
+        parse_cells("blake3-servil-st|merkle 65536 x 48 B;blake3-servil-mt|merkle 1048576 x 48 B");
+    assert_eq!(
+        algs,
+        vec![Algorithm::Blake3ServilSt, Algorithm::Blake3ServilMt]
+    );
+    assert_eq!(pts.len(), 2);
+    let p64k = POINTS[pts[0]];
+    let p1m = POINTS[pts[1]];
+    assert_eq!(p64k.label, "65536 x 48 B");
+    assert_eq!(p64k.messages, 1 << 16);
+    assert_eq!(p64k.bytes, (1 << 16) * 48);
+    assert_eq!(p1m.label, "1048576 x 48 B");
+    assert_eq!(p1m.messages, 1 << 20);
+    assert_eq!(p1m.bytes, (1 << 20) * 48);
+    assert!(cells.contains(&(Algorithm::Blake3ServilSt, pts[0])));
+    assert!(cells.contains(&(Algorithm::Blake3ServilMt, pts[1])));
+
+    // Every MerkleTree point has a distinct label and resolves uniquely by CLI name.
+    let mut labels = std::collections::BTreeSet::new();
+    let mut indices = std::collections::BTreeSet::new();
+    for (offset, p) in POINTS[UseCase::MerkleTree.points()].iter().enumerate() {
+        assert!(
+            labels.insert(p.label),
+            "duplicate MerkleTree label {}",
+            p.label
+        );
+        let idx = point_named(&format!("merkle {}", p.label));
+        assert_eq!(idx, UseCase::MerkleTree.points().start + offset);
+        assert!(indices.insert(idx), "duplicate CLI index for {}", p.label);
+    }
+    assert_eq!(labels.len(), MERKLE_COUNT);
+}
+
+#[test]
+fn hash_merkle_routes_48_byte_leaves_through_kept_packed48_storage() {
+    blake3_servil::initialize();
+    PACKED48.with(|kept| kept.borrow_mut().clear());
+    let point = Point::merkle_leaves("64 x 48 B", 64, 48);
+    let input = make_input(point.bytes);
+
+    // Calling outer hash_merkle must dispatch to Packed<48> and populate PACKED48.
+    let mut first_root = Vec::new();
+    hash_merkle(Algorithm::Blake3ServilSt, &input, point, 1, |r| {
+        first_root = r.to_vec()
+    });
+    let cached_ptr = PACKED48.with(|kept| {
+        let kept = kept.borrow();
+        assert_eq!(kept.len(), 1, "outer hash_merkle must populate PACKED48");
+        assert_eq!(kept[0].len(), 64);
+        kept[0].as_ptr()
+    });
+
+    // A second call reuses the same PACKED48 backing allocation and matches the root.
+    let mut second_root = Vec::new();
+    hash_merkle(Algorithm::Blake3ServilSt, &input, point, 1, |r| {
+        second_root = r.to_vec()
+    });
+    assert_eq!(second_root, first_root);
+    PACKED48.with(|kept| {
+        let kept = kept.borrow();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(
+            kept[0].as_ptr(),
+            cached_ptr,
+            "PACKED48 storage should be reused"
+        );
+    });
+}
+
+#[test]
+#[should_panic(expected = "unsupported packed Merkle leaf length 24")]
+fn hash_merkle_packed_panics_on_unsupported_leaf_len() {
+    let bad = Point::merkle_leaves("bad 24 B", 8, 24);
+    let input = vec![0u8; bad.bytes];
+    hash_merkle_packed(Algorithm::Blake3ServilSt, &input, bad, 1, |_| {});
 }
