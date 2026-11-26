@@ -58,22 +58,26 @@ impl Messages {
         consume(hash.as_bytes());
     }
 
-    /// Whole messages, each produced directly into rooms. The room's unused
-    /// tail can hold the next short message; a long message starts a fresh
-    /// room so every nonfinal commit has ROOM_LEN bytes at offset zero.
-    fn run<'a>(
+    /// Shared room-feed and drain protocol for whole messages. The `open`
+    /// closure specializes message creation (`Pipeline::message` vs
+    /// `Pipeline::message_with`) so plain runs carry no per-message or
+    /// per-piece mode branch, while plain and keyed traffic still keep
+    /// separate `Pipeline` instances.
+    #[inline(always)]
+    fn run_with<'a, Item>(
         &mut self,
-        inputs: impl IntoIterator<Item = &'a [u8]>,
+        items: impl IntoIterator<Item = Item>,
+        mut open: impl FnMut(&mut Pipeline<()>, Item) -> (&'a [u8], Message),
         mut consume: impl FnMut(&[u8]),
     ) {
         let mut room: Option<Room> = None;
         let mut pending = 0;
-        for input in inputs {
+        for item in items {
             if pending == self.capacity {
                 self.consume(&mut consume);
                 pending -= 1;
             }
-            let mut message = block_on(self.pipe.message((), Some(input.len() as u64)));
+            let (input, mut message) = open(&mut self.pipe, item);
             for piece in black_box(input).chunks(ROOM_LEN) {
                 if room.as_ref().is_none_or(|r| r.len() < piece.len()) {
                     // Release our reference before asking for another room.
@@ -93,42 +97,40 @@ impl Messages {
         }
     }
 
+    /// Whole messages, each produced directly into rooms. The room's unused
+    /// tail can hold the next short message; a long message starts a fresh
+    /// room so every nonfinal commit has ROOM_LEN bytes at offset zero.
+    fn run<'a>(&mut self, inputs: impl IntoIterator<Item = &'a [u8]>, consume: impl FnMut(&[u8])) {
+        self.run_with(
+            inputs,
+            |pipe, input| {
+                let message = block_on(pipe.message((), Some(input.len() as u64)));
+                (input, message)
+            },
+            consume,
+        );
+    }
+
     /// Whole messages, each authenticated under its own per-message key
     /// (`Pipeline::message_with(Mode::Keyed(key), ...)`), produced directly
     /// into rooms with the same room-sharing and drain rules as `run`.
     fn run_keyed<'a>(
         &mut self,
         inputs: impl IntoIterator<Item = (&'a [u8], &'a [u8; 32])>,
-        mut consume: impl FnMut(&[u8]),
+        consume: impl FnMut(&[u8]),
     ) {
-        let mut room: Option<Room> = None;
-        let mut pending = 0;
-        for (input, key) in inputs {
-            if pending == self.capacity {
-                self.consume(&mut consume);
-                pending -= 1;
-            }
-            let mut message = block_on(self.pipe.message_with(
-                Mode::Keyed(black_box(key)),
-                (),
-                Some(input.len() as u64),
-            ));
-            for piece in black_box(input).chunks(ROOM_LEN) {
-                if room.as_ref().is_none_or(|r| r.len() < piece.len()) {
-                    drop(room.take());
-                    room = Some(block_on(self.pipe.room()));
-                }
-                let r = room.as_mut().unwrap();
-                r.bytes_mut()[..piece.len()].copy_from_slice(piece);
-                self.pipe.commit(&mut message, r, piece.len());
-            }
-            self.pipe.end(message);
-            pending += 1;
-        }
-        drop(room);
-        for _ in 0..pending {
-            self.consume(&mut consume);
-        }
+        self.run_with(
+            inputs,
+            |pipe, (input, key)| {
+                let message = block_on(pipe.message_with(
+                    Mode::Keyed(black_box(key)),
+                    (),
+                    Some(input.len() as u64),
+                ));
+                (input, message)
+            },
+            consume,
+        );
     }
 
     /// The source declares no length. Accumulate arrivals directly in a room

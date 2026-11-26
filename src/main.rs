@@ -4365,7 +4365,7 @@ fn take_sample(algorithm: Algorithm, input: &[u8], point: Point, iterations: usi
         if point.use_case == UseCase::IncrementalMessage {
             let call = incremental::call(algorithm);
             return take_prepared_sample(input, true, iterations, pause_ns, |input| {
-                assert_blocks_aligned(input);
+                let _ = servil_blocks(input);
                 call(input, point.bytes)
             });
         }
@@ -4374,40 +4374,40 @@ fn take_sample(algorithm: Algorithm, input: &[u8], point: Point, iterations: usi
             // pay for its API, rather than the benchmark's dispatch tree.
             let call = one_message_call(algorithm);
             return take_prepared_sample(input, true, iterations, pause_ns, |input| {
-                // The door, for every contender alike (UseCase::in_blocks).
-                assert_blocks_aligned(input);
-                call(input, point.bytes)
+                // The door, for every contender alike (UseCase::in_blocks):
+                // convert once to aligned whole Blocks with no second check.
+                call(servil_blocks(input), point.bytes)
             });
         }
         if matches!(
             point.use_case.call(),
             UseCase::ManyMessages | UseCase::ManyLongMessages
         ) {
-            let hash_many: Option<fn(&[u8], usize, &mut [[u8; 32]])> = match algorithm {
-                Algorithm::Blake3ServilSt => Some(|i, l, o| {
-                    blake3_servil::throughput::hash_many(
-                        blake3_servil::Mode::Plain,
-                        &blake3_servil::throughput::Batch::from_blocks(servil_blocks(i), l),
-                        o,
-                    )
-                }),
-                Algorithm::Blake3ServilMt => Some(|i, l, o| {
-                    blake3_servil::throughput::hash_many_multithreaded(
-                        blake3_servil::Mode::Plain,
-                        &blake3_servil::throughput::Batch::from_blocks(servil_blocks(i), l),
-                        o,
-                    )
-                }),
-                _ => None,
-            };
+            let hash_many: Option<fn(&[blake3_servil::throughput::Block], usize, &mut [[u8; 32]])> =
+                match algorithm {
+                    Algorithm::Blake3ServilSt => Some(|b, l, o| {
+                        blake3_servil::throughput::hash_many(
+                            blake3_servil::Mode::Plain,
+                            &blake3_servil::throughput::Batch::from_blocks(b, l),
+                            o,
+                        )
+                    }),
+                    Algorithm::Blake3ServilMt => Some(|b, l, o| {
+                        blake3_servil::throughput::hash_many_multithreaded(
+                            blake3_servil::Mode::Plain,
+                            &blake3_servil::throughput::Batch::from_blocks(b, l),
+                            o,
+                        )
+                    }),
+                    _ => None,
+                };
             if let Some(hash_many) = hash_many {
                 let mut digests = take_batch_digests(point.messages);
                 let measured = take_prepared_sample(input, true, iterations, pause_ns, |input| {
                     #[cfg(test)]
                     observe_call("hash_many");
-                    assert_blocks_aligned(input);
                     hash_many(
-                        black_box(input),
+                        black_box(servil_blocks(input)),
                         point.message_len(),
                         &mut digests[..point.messages],
                     );
@@ -4614,11 +4614,14 @@ fn observe_call(call: &'static str) {
 /// `len` bytes, from the whole blocks it comes in (UseCase::in_blocks), which
 /// servil's throughput call takes as they are. Selection happens
 /// once, before the gap; every result remains observable to the optimizer.
-fn one_message_call(algorithm: Algorithm) -> fn(&[u8], usize) {
+fn one_message_call(algorithm: Algorithm) -> fn(&[blake3_servil::throughput::Block], usize) {
+    use blake3_servil::throughput::Block;
     match algorithm {
-        Algorithm::Blake3 => |blocks, len| use_digest(blake3::hash(&blocks[..len]).as_bytes()),
+        Algorithm::Blake3 => {
+            |blocks, len| use_digest(blake3::hash(&Block::bytes(blocks)[..len]).as_bytes())
+        }
         Algorithm::Blake3ServilSt => |blocks, len| {
-            let input = &blocks[..len];
+            let input = &Block::bytes(blocks)[..len];
             #[cfg(test)]
             observe_call("hash");
             use_digest(blake3_servil::convenience::hash(input).as_bytes());
@@ -4627,25 +4630,31 @@ fn one_message_call(algorithm: Algorithm) -> fn(&[u8], usize) {
             use_digest(
                 blake3_servil::throughput::hash_multithreaded(
                     blake3_servil::Mode::Plain,
-                    servil_blocks(blocks),
+                    blocks,
                     len,
                 )
                 .as_bytes(),
             )
         },
-        Algorithm::Sha256 => |blocks, len| use_digest(&Sha256::digest(&blocks[..len])),
+        Algorithm::Sha256 => {
+            |blocks, len| use_digest(&Sha256::digest(&Block::bytes(blocks)[..len]))
+        }
         Algorithm::Sha256Ring => |blocks, len| {
-            use_digest(ring::digest::digest(&ring::digest::SHA256, &blocks[..len]).as_ref())
+            use_digest(
+                ring::digest::digest(&ring::digest::SHA256, &Block::bytes(blocks)[..len]).as_ref(),
+            )
         },
         Algorithm::Sha256CommonCrypto => {
-            |blocks, len| use_digest(&common_crypto::sha256(&blocks[..len]))
+            |blocks, len| use_digest(&common_crypto::sha256(&Block::bytes(blocks)[..len]))
         }
-        Algorithm::Sha3_256 => |blocks, len| use_digest(&sha3::Sha3_256::digest(&blocks[..len])),
-        Algorithm::Sha1Dc => {
-            |blocks, len| use_digest(sha1_checked::Sha1::try_digest(&blocks[..len]).hash())
+        Algorithm::Sha3_256 => {
+            |blocks, len| use_digest(&sha3::Sha3_256::digest(&Block::bytes(blocks)[..len]))
         }
+        Algorithm::Sha1Dc => |blocks, len| {
+            use_digest(sha1_checked::Sha1::try_digest(&Block::bytes(blocks)[..len]).hash())
+        },
         Algorithm::Blake3Rayon => |blocks, len| {
-            let input = &blocks[..len];
+            let input = &Block::bytes(blocks)[..len];
             use_digest(
                 blake3::Hasher::new()
                     .update_rayon(input)
@@ -4845,10 +4854,9 @@ fn hash_in_memory(
     iterations: usize,
     consume: impl FnMut(&[u8]),
 ) {
-    if point.use_case.in_blocks() {
-        // The door, for every contender alike.
-        assert_blocks_aligned(input);
-    }
+    // The door, for every contender alike: convert once to aligned whole
+    // Blocks so no contender pays a duplicate alignment/length check.
+    let blocks = point.use_case.in_blocks().then(|| servil_blocks(input));
     let message_len = if point.use_case.batch() {
         point.message_len()
     } else {
@@ -4871,6 +4879,7 @@ fn hash_in_memory(
     hash_messages(
         algorithm,
         input,
+        blocks,
         point.messages,
         message_len,
         point.use_case.batch(),
@@ -4886,6 +4895,7 @@ fn hash_in_memory(
 fn hash_messages(
     algorithm: Algorithm,
     input: &[u8],
+    blocks: Option<&[blake3_servil::throughput::Block]>,
     messages: usize,
     message_len: usize,
     batch: bool,
@@ -4906,7 +4916,7 @@ fn hash_messages(
             Algorithm::Blake3ServilSt | Algorithm::Blake3ServilMt
         )
     {
-        let blocks = servil_blocks(input);
+        let blocks = blocks.unwrap_or_else(|| servil_blocks(input));
         for _ in 0..iterations {
             let hash = if algorithm == Algorithm::Blake3ServilMt {
                 blake3_servil::throughput::hash_multithreaded(
@@ -4973,14 +4983,14 @@ fn hash_messages(
         ),
         // A batch: a single message took its throughput call above.
         Algorithm::Blake3ServilSt => servil_batch(
-            input,
+            blocks.unwrap_or_else(|| servil_blocks(input)),
             messages,
             message_len,
             iterations,
-            |i, l, o| {
+            |b, l, o| {
                 blake3_servil::throughput::hash_many(
                     blake3_servil::Mode::Plain,
-                    &blake3_servil::throughput::Batch::from_blocks(servil_blocks(i), l),
+                    &blake3_servil::throughput::Batch::from_blocks(b, l),
                     o,
                 )
             },
@@ -5014,14 +5024,14 @@ fn hash_messages(
             )
         }
         Algorithm::Blake3ServilMt => servil_batch(
-            input,
+            blocks.unwrap_or_else(|| servil_blocks(input)),
             messages,
             message_len,
             iterations,
-            |i, l, o| {
+            |b, l, o| {
                 blake3_servil::throughput::hash_many_multithreaded(
                     blake3_servil::Mode::Plain,
-                    &blake3_servil::throughput::Batch::from_blocks(servil_blocks(i), l),
+                    &blake3_servil::throughput::Batch::from_blocks(b, l),
                     o,
                 )
             },
@@ -5134,15 +5144,20 @@ fn hash_collection(
         } else {
             blake3_servil::throughput::hash_each_multithreaded
         };
-        // Each item in its whole blocks (the collection's layout).
-        assert_blocks_aligned(input);
+        // Each item in its whole blocks (the collection's layout), sliced from
+        // one checked Block view of the collection.
+        let all_blocks = servil_blocks(input);
         let slices: Vec<(&[blake3_servil::throughput::Block], usize)> = items
             .iter()
             .map(|&(offset, len)| {
-                (
-                    servil_blocks(&input[offset..offset + len.next_multiple_of(BLOCK_LEN)]),
-                    len,
-                )
+                assert_eq!(
+                    offset % BLOCK_LEN,
+                    0,
+                    "collection item starts at a block boundary"
+                );
+                let start = offset / BLOCK_LEN;
+                let count = len.next_multiple_of(BLOCK_LEN) / BLOCK_LEN;
+                (&all_blocks[start..start + count], len)
             })
             .collect();
         let mut digests = vec![[0u8; 32]; slices.len()];
@@ -5640,6 +5655,23 @@ fn hash_continuous_keyed_messages(
             consume,
         );
     }
+    if algorithm == Algorithm::Blake3ServilSt && len <= PIECE_LEN {
+        let mut block_buf = take_block_buffer(len.next_multiple_of(BLOCK_LEN) / BLOCK_LEN);
+        for i in 0..iterations {
+            let key = black_box(&PER_MESSAGE_KEYS[i & 1]);
+            let bytes = blake3_servil::throughput::Block::bytes_mut(&mut block_buf);
+            bytes[..len].copy_from_slice(black_box(input));
+            bytes[len..].fill(0);
+            let hash = blake3_servil::throughput::hash(
+                blake3_servil::Mode::Keyed(key),
+                black_box(&block_buf),
+                len,
+            );
+            consume(hash.as_bytes());
+        }
+        keep_block_buffer(block_buf);
+        return;
+    }
     let piece_cap = if algorithm == Algorithm::Blake3Rayon {
         len
     } else {
@@ -5651,16 +5683,6 @@ fn hash_continuous_keyed_messages(
         let key = black_box(&PER_MESSAGE_KEYS[i & 1]);
         let buffer = &mut buffers[0];
         match algorithm {
-            Algorithm::Blake3ServilSt if len <= PIECE_LEN => {
-                let at = block_message(buffer, black_box(input));
-                let padded = len.next_multiple_of(BLOCK_LEN);
-                let hash = blake3_servil::throughput::hash(
-                    blake3_servil::Mode::Keyed(key),
-                    black_box(servil_blocks(&buffer[at..][..padded])),
-                    len,
-                );
-                consume(hash.as_bytes());
-            }
             Algorithm::Blake3ServilSt => {
                 let mut hasher =
                     blake3_servil::convenience::Hasher::new(blake3_servil::Mode::Keyed(key), None);
@@ -5810,28 +5832,28 @@ fn hash_tree_layer(
     match algorithm {
         Algorithm::Blake3 => blake3_batch(input, message_len, Some(node.key()), 1, consume),
         Algorithm::Blake3ServilSt => servil_batch(
-            input,
+            servil_blocks(input),
             messages,
             message_len,
             1,
-            |i, l, o| {
+            |b, l, o| {
                 blake3_servil::throughput::hash_many(
                     blake3_servil::Mode::Keyed(node.key()),
-                    &blake3_servil::throughput::Batch::from_blocks(servil_blocks(i), l),
+                    &blake3_servil::throughput::Batch::from_blocks(b, l),
                     o,
                 )
             },
             consume,
         ),
         Algorithm::Blake3ServilMt => servil_batch(
-            input,
+            servil_blocks(input),
             messages,
             message_len,
             1,
-            |i, l, o| {
+            |b, l, o| {
                 blake3_servil::throughput::hash_many_multithreaded(
                     blake3_servil::Mode::Keyed(node.key()),
-                    &blake3_servil::throughput::Batch::from_blocks(servil_blocks(i), l),
+                    &blake3_servil::throughput::Batch::from_blocks(b, l),
                     o,
                 )
             },
@@ -6216,22 +6238,12 @@ fn assert_blocks_aligned(input: &[u8]) {
 }
 
 /// An input in blocks (a batch, or a message with its whole blocks) as
-/// servil's throughput calls take it, Blocks: the door
-/// (assert_blocks_aligned) has checked its placement for every contender
-/// alike, so servil's calls carry no check of their own.
+/// servil's throughput calls take it, using `Block::from_bytes` so alignment
+/// and whole-block length remain enforced in release builds with no unsafe cast.
 fn servil_blocks(blocks: &[u8]) -> &[blake3_servil::throughput::Block] {
-    debug_assert!(
-        blake3_servil::throughput::Block::from_bytes(blocks).is_some(),
-        "an input in whole aligned blocks"
-    );
-    if blocks.is_empty() {
-        // An empty slice's pointer is no Block's.
-        return &[];
-    }
-    // Sound: at a 64-byte boundary (the door) and whole blocks (the slice
-    // covers them: input_len, block_message, the collection's layout); a
-    // Block is 64 bytes, no padding.
-    unsafe { core::slice::from_raw_parts(blocks.as_ptr().cast(), blocks.len() / BLOCK_LEN) }
+    blake3_servil::throughput::Block::from_bytes(blocks).expect(
+        "an input in blocks starts at a 64-byte boundary and consists of whole 64-byte blocks",
+    )
 }
 
 fn keep_buffers(count: usize, len: usize, buffers: Vec<Vec<u8>>) {
@@ -6397,20 +6409,37 @@ fn frozen_contract() -> String {
 /// `consume` per pass.
 #[inline(always)]
 fn servil_batch(
-    input: &[u8],
+    blocks: &[blake3_servil::throughput::Block],
     messages: usize,
     message_len: usize,
     iterations: usize,
-    hash_many: impl Fn(&[u8], usize, &mut [[u8; 32]]),
+    hash_many: impl Fn(&[blake3_servil::throughput::Block], usize, &mut [[u8; 32]]),
     mut consume: impl FnMut(&[u8]),
 ) {
-    assert_eq!(input.len(), messages * message_len);
+    assert_eq!(blocks.len() * BLOCK_LEN, messages * message_len);
     let mut digests = take_batch_digests(messages);
     for _ in 0..iterations {
-        hash_many(black_box(input), message_len, &mut digests[..messages]);
+        hash_many(black_box(blocks), message_len, &mut digests[..messages]);
         consume(digests[..messages].as_flattened());
     }
     keep_batch_digests(digests);
+}
+
+thread_local! {
+    /// Kept aligned block buffer for single-threaded keyed messages so the
+    /// per-message loop never repeats alignment checks or allocation.
+    static KEYED_BLOCK_BUFFER: std::cell::RefCell<Vec<blake3_servil::throughput::Block>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn take_block_buffer(blocks: usize) -> Vec<blake3_servil::throughput::Block> {
+    let mut buf = KEYED_BLOCK_BUFFER.with(|kept| std::mem::take(&mut *kept.borrow_mut()));
+    buf.resize(blocks, blake3_servil::throughput::Block::ZERO);
+    buf
+}
+
+fn keep_block_buffer(buf: Vec<blake3_servil::throughput::Block>) {
+    KEYED_BLOCK_BUFFER.with(|kept| *kept.borrow_mut() = buf);
 }
 
 thread_local! {
@@ -7220,6 +7249,23 @@ fn continuous_min_inputs(input: &[u8], point: Point) -> usize {
     }
 }
 
+/// Round a calibrated sample count for its use case.
+///
+/// `ContinuousKeyedMessages` alternates two keys (`PER_MESSAGE_KEYS[0..2]`)
+/// starting at index 0 on every batch, so rounding up to an even count ensures
+/// complete key pairs and guarantees consecutive samples never place the same
+/// key on adjacent messages (FROZEN.md).
+fn round_calibrated_iterations(use_case: UseCase, iterations: u128) -> usize {
+    let rounded = if use_case == UseCase::ContinuousKeyedMessages {
+        iterations
+            .checked_next_multiple_of(2)
+            .expect("calibrated iteration count overflowed")
+    } else {
+        iterations
+    };
+    usize::try_from(rounded).expect("calibrated iteration count must fit in usize")
+}
+
 /// Untimed batches before a cell's calibration, and probes it takes the
 /// fastest of (calibrate_batch).
 const CALIBRATION_WARMUPS: usize = 3;
@@ -7268,14 +7314,9 @@ fn calibrate_batch(algorithm: Algorithm, input: &[u8], point: Point) -> (usize, 
         if elapsed_ns >= CALIBRATION_PROBE_NS {
             let scaled = (iterations as u128 * TARGET_SAMPLE_NS + elapsed_ns / 2) / elapsed_ns;
 
-            let scaled = scaled.max(fewest as u128);
+            let scaled = round_calibrated_iterations(point.use_case, scaled.max(fewest as u128));
 
-            assert!(
-                scaled <= usize::MAX as u128,
-                "calibrated iteration count must fit in usize"
-            );
-
-            return (scaled as usize, elapsed_ns / iterations as u128);
+            return (scaled, elapsed_ns / iterations as u128);
         }
 
         let growth = (CALIBRATION_PROBE_NS + elapsed_ns - 1) / elapsed_ns;
@@ -10024,6 +10065,69 @@ mod correctness_tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn continuous_keyed_calibration_sizes_complete_key_pairs() {
+        blake3_servil::initialize();
+        assert_eq!(
+            round_calibrated_iterations(UseCase::ContinuousKeyedMessages, 1),
+            2
+        );
+        assert_eq!(
+            round_calibrated_iterations(UseCase::ContinuousKeyedMessages, 3),
+            4
+        );
+        assert_eq!(
+            round_calibrated_iterations(UseCase::ContinuousKeyedMessages, 4),
+            4
+        );
+        assert_eq!(
+            round_calibrated_iterations(UseCase::ContinuousMessages, 3),
+            3
+        );
+        // Back-to-back calibrated batches preserve alternation across the boundary.
+        let input = make_input(64);
+        let (buf, at) = block_copy(&input);
+        let blocks = &buf[at..][..BLOCK_LEN];
+        let point = POINTS[UseCase::ContinuousKeyedMessages.points()][0];
+        let batch_size = round_calibrated_iterations(point.use_case, 3);
+        let mut combined = Vec::new();
+        for _ in 0..2 {
+            hash_batch(Algorithm::Blake3ServilSt, blocks, point, batch_size, |d| {
+                combined.push(<[u8; 32]>::try_from(d).unwrap())
+            });
+        }
+        assert_eq!(combined.len(), 8);
+        for (i, got) in combined.iter().enumerate() {
+            assert_eq!(
+                got,
+                blake3::keyed_hash(&PER_MESSAGE_KEYS[i & 1], &input).as_bytes(),
+                "message {i}"
+            );
+        }
+    }
+
+    #[test]
+    fn servil_blocks_accepts_empty_and_aligned_whole_blocks() {
+        assert!(servil_blocks(&[]).is_empty());
+        let (buf, at) = block_copy(&make_input(100));
+        let padded = &buf[at..][..2 * BLOCK_LEN];
+        assert_eq!(servil_blocks(padded).len(), 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "an input in blocks starts at a 64-byte boundary")]
+    fn servil_blocks_rejects_unaligned_slice() {
+        let (buf, at) = block_copy(&make_input(2 * BLOCK_LEN));
+        let _ = servil_blocks(&buf[at + 1..][..BLOCK_LEN]);
+    }
+
+    #[test]
+    #[should_panic(expected = "whole 64-byte blocks")]
+    fn servil_blocks_rejects_partial_block_length() {
+        let (buf, at) = block_copy(&make_input(2 * BLOCK_LEN));
+        let _ = servil_blocks(&buf[at..][..BLOCK_LEN + 1]);
     }
 
     #[test]
