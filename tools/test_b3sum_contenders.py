@@ -70,48 +70,95 @@ class RelinkTests(unittest.TestCase):
                     self.assertEqual(module.relink("contender", "Cargo.toml", str(built), "-C target-feature=+crt-static", **options), result)
                     self.assertEqual(len(calls), 2, "retained layouts are reused as before")
 
-    def test_existing_cli_retains_its_names_flags_and_artifacts(self):
+    def test_b3sum_manifest_detects_standalone_legacy_and_post_split(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            dest = root / "bins"
-            cargo_home = root / "cargo"
-            official_src = cargo_home / "registry/src/test/b3sum-1.8.7"
-            official_src.mkdir(parents=True)
-            target = root / "builds/b3sum-contenders"
 
-            def out(*args, **kwargs):
-                if args[0] == "rustc":
-                    return "rustc test\nhost: " + HOST
-                if args[-1] == "--show-toplevel":
-                    return str(root / "fork")
-                self.assertEqual(args[-2:], ("--short=7", "HEAD^{commit}"))
-                return "abcdef0"
+            standalone = root / "standalone"
+            standalone.mkdir()
+            (standalone / "Cargo.toml").write_text('[package]\nname = "b3sums"\nversion = "0.11.0+dev"\n')
+            self.assertEqual(module.b3sum_manifest(str(standalone)), str(standalone / "Cargo.toml"))
 
-            def run(*args, env=None):
-                if args[:2] == ("cargo", "install"):
-                    path = Path(args[args.index("--root") + 1]) / "bin/b3sum"
-                elif args[:2] == ("cargo", "build"):
-                    self.assertEqual(env["RUSTFLAGS"], "-C target-feature=+crt-static")
-                    path = Path(env["CARGO_TARGET_DIR"]) / HOST / "release/b3sum"
-                else:
-                    self.assertEqual(args[0], "git")
-                    Path(args[-2]).mkdir(parents=True)
-                    return
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(b"program")
-                path.chmod(0o755)
+            standalone_old_name = root / "standalone-b3sum"
+            standalone_old_name.mkdir()
+            (standalone_old_name / "Cargo.toml").write_text('[package]\nname = "b3sum"\nversion = "1.8.0"\n')
+            self.assertEqual(module.b3sum_manifest(str(standalone_old_name)), str(standalone_old_name / "Cargo.toml"))
 
-            with patch.dict(os.environ, {"LAYOUTS": "1", "CARGO_HOME": str(cargo_home), "CARGO_TARGET_DIR": str(root / "builds")}), patch.object(module.sys, "argv", ["b3sum-contenders.py", str(root / "fork"), str(dest)]), patch.object(module, "out", side_effect=out), patch.object(module, "run", side_effect=run), patch.object(module.shutil, "which", return_value=None):
-                stdout = io.StringIO()
-                with contextlib.redirect_stdout(stdout):
-                    module.main()
-            self.assertEqual(stdout.getvalue().splitlines(), [
-                f"official={dest}/b3sum-official-1.8.7",
-                f"official-1-thread={dest}/b3sum-official-1.8.7 --num-threads 1",
-                f"b3sum={dest}/b3sum-abcdef0",
-                f"b3sum-1-thread={dest}/b3sum-abcdef0 --num-threads 1",
-            ])
-            self.assertTrue((target / "worktree-abcdef0").is_dir())
+            legacy = root / "legacy-blake3"
+            (legacy / "b3sum").mkdir(parents=True)
+            (legacy / "Cargo.toml").write_text('[package]\nname = "blake3-servil-core"\nversion = "0.11.0"\n')
+            (legacy / "b3sum/Cargo.toml").write_text('[package]\nname = "b3sums"\nversion = "0.11.0"\n')
+            self.assertEqual(module.b3sum_manifest(str(legacy)), str(legacy / "b3sum/Cargo.toml"))
+
+            post_split = root / "post-split-blake3"
+            post_split.mkdir()
+            (post_split / "Cargo.toml").write_text('[package]\nname = "blake3-servil-core"\nversion = "0.11.0+dev"\n')
+            with self.assertRaises(SystemExit) as ctx:
+                module.b3sum_manifest(str(post_split))
+            self.assertIn("servil-software-factory/b3sum", str(ctx.exception))
+
+            empty = root / "empty"
+            empty.mkdir()
+            with self.assertRaises(SystemExit):
+                module.b3sum_manifest(str(empty))
+
+    def test_existing_cli_retains_its_names_flags_and_artifacts(self):
+        for layout in ("standalone", "legacy"):
+            with self.subTest(layout=layout), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                dest = root / "bins"
+                cargo_home = root / "cargo"
+                official_src = cargo_home / "registry/src/test/b3sum-1.8.7"
+                official_src.mkdir(parents=True)
+                target = root / "builds/b3sum-contenders"
+                built_manifests = []
+
+                def out(*args, **kwargs):
+                    if args[0] == "rustc":
+                        return "rustc test\nhost: " + HOST
+                    if args[-1] == "--show-toplevel":
+                        return str(root / "repo")
+                    self.assertEqual(args[-2:], ("--short=7", "HEAD^{commit}"))
+                    return "abcdef0"
+
+                def run(*args, env=None):
+                    if args[:2] == ("cargo", "install"):
+                        path = Path(args[args.index("--root") + 1]) / "bin/b3sum"
+                    elif args[:2] == ("cargo", "build"):
+                        self.assertIn("--locked", args)
+                        self.assertEqual(args[args.index("--bin") + 1], "b3sum")
+                        built_manifests.append(args[args.index("--manifest-path") + 1])
+                        self.assertEqual(env["RUSTFLAGS"], "-C target-feature=+crt-static")
+                        path = Path(env["CARGO_TARGET_DIR"]) / HOST / "release/b3sum"
+                    else:
+                        self.assertEqual(args[0], "git")
+                        wt = Path(args[-2])
+                        if layout == "standalone":
+                            wt.mkdir(parents=True)
+                            (wt / "Cargo.toml").write_text('[package]\nname = "b3sums"\nversion = "0.11.0+dev"\n')
+                        else:
+                            (wt / "b3sum").mkdir(parents=True)
+                            (wt / "Cargo.toml").write_text('[package]\nname = "blake3-servil-core"\nversion = "0.11.0"\n')
+                            (wt / "b3sum/Cargo.toml").write_text('[package]\nname = "b3sums"\nversion = "0.11.0"\n')
+                        return
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(b"program")
+                    path.chmod(0o755)
+
+                with patch.dict(os.environ, {"LAYOUTS": "1", "CARGO_HOME": str(cargo_home), "CARGO_TARGET_DIR": str(root / "builds")}), patch.object(module.sys, "argv", ["b3sum-contenders.py", str(root / "repo"), str(dest)]), patch.object(module, "out", side_effect=out), patch.object(module, "run", side_effect=run), patch.object(module.shutil, "which", return_value=None):
+                    stdout = io.StringIO()
+                    with contextlib.redirect_stdout(stdout):
+                        module.main()
+                self.assertEqual(stdout.getvalue().splitlines(), [
+                    f"official={dest}/b3sum-official-1.8.7",
+                    f"official-1-thread={dest}/b3sum-official-1.8.7 --num-threads 1",
+                    f"b3sum={dest}/b3sum-abcdef0",
+                    f"b3sum-1-thread={dest}/b3sum-abcdef0 --num-threads 1",
+                ])
+                wt = target / "worktree-abcdef0"
+                self.assertTrue(wt.is_dir())
+                expected = wt / ("Cargo.toml" if layout == "standalone" else "b3sum/Cargo.toml")
+                self.assertEqual(built_manifests, [str(expected)])
 
 
 if __name__ == "__main__":
