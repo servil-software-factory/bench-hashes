@@ -70,6 +70,12 @@ criteria = "agent-safe-to-deploy"
 version = "0.2.17"
 notes = "Line-by-line review of Cargo.toml and all 24 src/*.rs files (1,739 LOC, #![no_std], build = false). Thin OS CSPRNG bindings: Linux/Android SYS_getrandom with sys_fill_exact EINTR/short-read handling and /dev/urandom fallback only after POLLIN on /dev/random (O_CLOEXEC, pthread_mutex_t); macOS/OpenBSD getentropy in 256-byte chunks; Windows BCryptGenRandom in u32::MAX chunks; NetBSD Release/Acquire Weak dlsym or KERN_ARND; Solaris GRND_RANDOM; rdrand CPUID/AMD-family-17h/self_test checks. No network, no unexpected I/O, sound MaybeUninit initialization contract."
 
+[[audits.hybrid-array]]
+who = "Devon Jonte <devonjonte@users.noreply.github.com>"
+criteria = "agent-safe-to-deploy"
+version = "0.4.15"
+notes = "Full line-by-line review of Cargo.toml (build = false, #![no_std]) and all 7 src/*.rs files (3,229 LOC, all 820/820 N => UN pairs in src/sizes.rs verified with 0 mismatches) plus independent adversarial check (GPT Astra). Zero UB, zero memory unsafety, zero OS/FS/network/env calls; split/concat/flatten/unflatten/slice casts/MaybeUninit/Pod/Zeroable/Send/Sync are sound. Non-blocking notes: src/from_fn.rs Guard::drop loops per-element drop_in_place and try_from_fn_erased drops closure f after mem::forget(guard), so a panicking destructor can safely leak remaining elements (memory-safe, no UB or security risk)."
+
 [[audits.keccak]]
 who = "Devon Jonte <devonjonte@users.noreply.github.com>"
 criteria = "agent-safe-to-deploy"

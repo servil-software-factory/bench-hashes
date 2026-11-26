@@ -107,10 +107,6 @@ criteria = "agent-safe-to-deploy"
 version = "0.14.7"
 criteria = "agent-safe-to-deploy"
 
-[[exemptions.hybrid-array]]
-version = "0.4.15"
-criteria = "agent-safe-to-deploy"
-
 [[exemptions.libc]]
 version = "0.2.189"
 criteria = "agent-safe-to-deploy"
