@@ -23,6 +23,9 @@ thread_local! {
     // Kept separate from MESSAGES so per-message custom mode never alters
     // default-mode ContinuousMessages pipelines in the same process.
     static KEYED_MESSAGES: RefCell<Option<Messages>> = const { RefCell::new(None) };
+    // Kept separate with zero rooms for zero-copy grouped `Pipeline::lent`
+    // steady-state coverage (bench-hashes #303).
+    static LENT_MESSAGES: RefCell<Option<LentMessages>> = const { RefCell::new(None) };
     static BATCHES: RefCell<crate::Map<usize, Batches>> = RefCell::new(crate::Map::default());
 }
 
@@ -191,6 +194,105 @@ pub(crate) fn keyed_messages<'a>(
             .get_or_insert_with(|| Messages::new(LIMITS))
             .run_keyed(inputs, consume)
     });
+}
+
+struct LentMessages {
+    pipe: Pipeline<()>,
+    capacity: usize,
+}
+
+impl LentMessages {
+    fn new(messages: usize) -> Self {
+        Self {
+            pipe: Pipeline::new(Mode::Plain, Limits { messages, rooms: 0 }),
+            capacity: messages,
+        }
+    }
+
+    fn consume(&mut self, consume: &mut impl FnMut(&[u8])) {
+        let Event::Hashed {
+            hash, owner: None, ..
+        } = completed(&mut self.pipe)
+        else {
+            panic!("a lent message supplies one hash");
+        };
+        consume(hash.as_bytes());
+    }
+
+    /// Whole messages lent directly to `Pipeline::lent` with up to `capacity`
+    /// loans in flight at once, dropping each `Lent` guard as its `Hashed`
+    /// event is drained.
+    fn run<'a>(
+        &mut self,
+        inputs: impl IntoIterator<Item = &'a [u8]>,
+        mut consume: impl FnMut(&[u8]),
+    ) {
+        let mut guards = std::collections::VecDeque::with_capacity(self.capacity);
+        for input in inputs {
+            if guards.len() == self.capacity {
+                self.consume(&mut consume);
+                drop(guards.pop_front());
+            }
+            let input = black_box(input);
+            let message = block_on(self.pipe.message((), Some(input.len() as u64)));
+            // Sound: every `Lent<'a>` guard stays in `guards` and is dropped
+            // before `run` returns (or unwinds), strictly within `'a`.
+            guards.push_back(unsafe { self.pipe.lent(message, input) });
+        }
+        while !guards.is_empty() {
+            self.consume(&mut consume);
+            drop(guards.pop_front());
+        }
+    }
+}
+
+/// One lent input after another through `Pipeline::lent`, keeping loans in
+/// flight up to `IN_FLIGHT_BUFFERS` and draining every digest and guard before
+/// returning.
+pub(crate) fn lent_messages<'a>(
+    inputs: impl IntoIterator<Item = &'a [u8]>,
+    consume: impl FnMut(&[u8]),
+) {
+    LENT_MESSAGES.with(|kept| {
+        kept.borrow_mut()
+            .get_or_insert_with(|| LentMessages::new(crate::IN_FLIGHT_BUFFERS))
+            .run(inputs, consume)
+    });
+}
+
+/// Cold `Pipeline::new` + single 64-byte message + `Drop` with 4,096 rooms
+/// (256 MiB virtual room budget), invoked in a fresh child process via
+/// `bench-hashes pipeline-lifecycle` to measure cold allocation latency and
+/// peak RSS (bench-hashes #303).
+pub(crate) fn cold_lifecycle_probe() {
+    const LIFECYCLE_ROOMS: usize = 4096;
+    const LIFECYCLE_MSG: [u8; 64] = [0x5au8; 64];
+    let want = blake3::hash(&LIFECYCLE_MSG);
+    let mut pipe = Pipeline::<()>::new(
+        Mode::Plain,
+        Limits {
+            messages: 64,
+            rooms: LIFECYCLE_ROOMS,
+        },
+    );
+    let mut message = block_on(pipe.message((), Some(LIFECYCLE_MSG.len() as u64)));
+    let mut room = block_on(pipe.room());
+    room.bytes_mut()[..LIFECYCLE_MSG.len()].copy_from_slice(black_box(&LIFECYCLE_MSG));
+    pipe.commit(&mut message, &mut room, LIFECYCLE_MSG.len());
+    drop(room);
+    pipe.end(message);
+    let Event::Hashed {
+        hash, owner: None, ..
+    } = completed(&mut pipe)
+    else {
+        panic!("pipeline-lifecycle expected Hashed event");
+    };
+    assert_eq!(
+        hash.as_bytes(),
+        want.as_bytes(),
+        "pipeline-lifecycle digest mismatch"
+    );
+    drop(pipe);
 }
 
 #[inline(always)]

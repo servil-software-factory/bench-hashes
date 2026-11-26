@@ -189,12 +189,16 @@ const COLLECTION_COUNT: usize = 2;
 /// Continuous keyed messages: short (`64 B`), medium (`4 KiB`), and multi-piece
 /// (`1 MiB`) through per-message keyed mode (`Pipeline::message_with`).
 const CONTINUOUS_KEYED_COUNT: usize = 3;
+/// Continuous lent messages: short (`64 B`), medium (`4 KiB`), and multi-piece
+/// (`1 MiB`) lent directly into `Pipeline::lent` with zero room copy (bench-hashes #303).
+const CONTINUOUS_LENT_COUNT: usize = 3;
 /// Two fixed 32-byte keys alternated across consecutive messages so adjacent
 /// messages never share a key.
 const PER_MESSAGE_KEYS: [[u8; 32]; 2] = [[0x5au8; 32], [0xa5u8; 32]];
 const POINT_COUNT: usize = 4 * (INPUT_COUNT + BATCH_COUNT)
     + 2 * CONTINUOUS_MESSAGE_COUNT
     + CONTINUOUS_KEYED_COUNT
+    + CONTINUOUS_LENT_COUNT
     + INTERLEAVED_COUNT
     + 2 * COLLECTION_COUNT
     + 2 * CONTINUOUS_BATCH_COUNT
@@ -813,6 +817,9 @@ const POINTS: [Point; POINT_COUNT] = [
     Point::continuous_keyed("64 B", 64),
     Point::continuous_keyed("4 KiB", 4 * 1024),
     Point::continuous_keyed("1 MiB", 1024 * 1024),
+    Point::continuous_lent("64 B", 64),
+    Point::continuous_lent("4 KiB", 4 * 1024),
+    Point::continuous_lent("1 MiB", 1024 * 1024),
 ];
 
 /// results[contender_index][point_index], contenders in the roster's
@@ -888,6 +895,10 @@ enum UseCase {
     /// with its own alternating per-message key (`Mode::Keyed`), exercising
     /// `Pipeline::message_with` for BLAKE3-Servil mt.
     ContinuousKeyedMessages,
+    /// Messages of the point's length, one after another, lent directly in
+    /// place without copying into rooms, exercising grouped and multi-piece
+    /// `Pipeline::lent` + `Lent::drop` for BLAKE3-Servil mt (bench-hashes #303).
+    ContinuousLentMessages,
     /// Batches of the point's count of 64-byte messages, one after
     /// another, each read into a buffer, then hashed.
     ContinuousBatches,
@@ -956,7 +967,7 @@ const PATTERNS: [&str; 6] = [
 ];
 
 impl UseCase {
-    const ALL: [UseCase; 25] = [
+    const ALL: [UseCase; 26] = [
         UseCase::OneMessage,
         UseCase::ManyMessages,
         UseCase::ManyLongMessages,
@@ -982,6 +993,7 @@ impl UseCase {
         UseCase::IncrementalMessage,
         UseCase::LentIncrementalMessage,
         UseCase::ContinuousKeyedMessages,
+        UseCase::ContinuousLentMessages,
     ];
 
     /// Whether each call comes after a gap (the synchronous use cases:
@@ -1089,6 +1101,7 @@ impl UseCase {
                     | Self::LentMessages
                     | Self::ContinuousMessages
                     | Self::ContinuousKeyedMessages
+                    | Self::ContinuousLentMessages
                     | Self::Collection
                     | Self::ContinuousCollection
             )
@@ -1146,6 +1159,9 @@ impl UseCase {
             Self::ContinuousKeyedMessages => {
                 "Keyed messages one after another, alternating keys per message"
             }
+            Self::ContinuousLentMessages => {
+                "Messages one after another, lent directly in flight"
+            }
             Self::ContinuousBatches => "Batches one after another, buffers owned",
             Self::LentMessages => "Messages one after another, buffers lent",
             Self::ReceivingMessage => "A message received in fragments, timed end to end",
@@ -1182,6 +1198,7 @@ impl UseCase {
             | Self::ControlledIdleOneMessage
             | Self::ContinuousMessages
             | Self::ContinuousKeyedMessages
+            | Self::ContinuousLentMessages
             | Self::LentMessages
             | Self::IncrementalMessage
             | Self::LentIncrementalMessage => "size",
@@ -1217,6 +1234,7 @@ impl UseCase {
             | Self::ControlledIdleOneMessage
             | Self::ContinuousMessages
             | Self::ContinuousKeyedMessages
+            | Self::ContinuousLentMessages
             | Self::LentMessages
             | Self::ReceivingMessage
             | Self::IncrementalMessage
@@ -1288,6 +1306,7 @@ impl UseCase {
             Self::ControlledIdleOneMessage | Self::ControlledIdleManyMessages => "controlled idle ",
             Self::ContinuousMessages => "continuous ",
             Self::ContinuousKeyedMessages => "continuous keyed ",
+            Self::ContinuousLentMessages => "continuous lent ",
             Self::ContinuousBatches => "continuous batch ",
             Self::LentMessages => "lent ",
             Self::ReceivingMessage => "receive ",
@@ -1375,6 +1394,15 @@ impl Point {
             bytes,
             messages: 1,
             use_case: UseCase::ContinuousKeyedMessages,
+        }
+    }
+
+    const fn continuous_lent(label: &'static str, bytes: usize) -> Self {
+        Self {
+            label,
+            bytes,
+            messages: 1,
+            use_case: UseCase::ContinuousLentMessages,
         }
     }
 
@@ -1593,7 +1621,7 @@ impl Algorithm {
             | UseCase::ReceivingMessage
             | UseCase::IncrementalMessage
             | UseCase::LentIncrementalMessage => true,
-            UseCase::ContinuousKeyedMessages => matches!(
+            UseCase::ContinuousKeyedMessages | UseCase::ContinuousLentMessages => matches!(
                 self,
                 Self::Blake3 | Self::Blake3ServilSt | Self::Blake3Rayon | Self::Blake3ServilMt
             ),
@@ -3285,6 +3313,22 @@ fn main() {
         );
         return;
     }
+    if arguments.first().map(String::as_str) == Some("pipeline-lifecycle") {
+        if arguments.get(1).map(String::as_str) == Some("--check") {
+            assert!(
+                arguments.len() == 2,
+                "usage: bench-hashes pipeline-lifecycle [--check]"
+            );
+            return;
+        }
+        assert!(
+            arguments.len() == 1,
+            "usage: bench-hashes pipeline-lifecycle [--check]"
+        );
+        blake3_servil::initialize_multithreaded(None);
+        pipeline::cold_lifecycle_probe();
+        return;
+    }
     if arguments.first().map(String::as_str) == Some("check") {
         exit_with(check::command(&arguments[1..]));
     }
@@ -4706,7 +4750,7 @@ fn hash_batch(
     macro_rules! each_contender {
         ($($a:literal)*) => {
             match Algorithm::ALL.iter().position(|a| *a == algorithm) {
-                $(Some($a) => each_use_case!($a: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24),)*
+                $(Some($a) => each_use_case!($a: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25),)*
                 _ => unreachable!("every contender is in Algorithm::ALL"),
             }
         };
@@ -4822,6 +4866,12 @@ fn hash_batch_of(
                 consume,
             )
         }
+        UseCase::ContinuousLentMessages if algorithm == Algorithm::Blake3ServilMt => {
+            return pipeline::lent_messages(
+                std::iter::repeat_n(&input[..point.bytes], iterations),
+                consume,
+            );
+        }
         UseCase::ContinuousBatches => {
             return hash_continuous_batches(algorithm, input, point, iterations, consume)
         }
@@ -4829,7 +4879,8 @@ fn hash_batch_of(
             return hash_lent(algorithm, input, point, iterations, consume)
         }
         UseCase::MerkleTree => return hash_merkle(algorithm, input, point, iterations, consume),
-        UseCase::OneMessage
+        UseCase::ContinuousLentMessages
+        | UseCase::OneMessage
         | UseCase::IncrementalMessage
         | UseCase::IdleOneMessage
         | UseCase::BriefIdleOneMessage
@@ -6315,7 +6366,7 @@ thread_local! {
  * and is recorded there. Keep the dispatch (hash_batch) calling exactly these.
  */
 #[cfg(test)]
-const SERVIL_CALLS: [(Algorithm, UseCase, &str); 38] = [
+const SERVIL_CALLS: [(Algorithm, UseCase, &str); 40] = [
     (Algorithm::Blake3ServilSt, UseCase::IncrementalMessage, "convenience::Hasher::new(Mode::Plain, None), one update of the complete message, finalize and consume; fresh hasher per call after other work; same prepared-input copy and alignment as OneMessage"),
     (Algorithm::Blake3ServilMt, UseCase::IncrementalMessage, "convenience::Hasher::new(Mode::Plain, None), one throughput::update_multithreaded of the complete message, finalize and consume; fresh hasher per call after other work; same prepared-input copy and alignment as OneMessage"),
     (Algorithm::Blake3ServilSt, UseCase::LentIncrementalMessage, "convenience::Hasher::new(Mode::Plain, None), one update of the complete message, finalize and consume; fresh hasher per nonstop call; same kept-buffer input copy as LentMessages"),
@@ -6336,9 +6387,11 @@ const SERVIL_CALLS: [(Algorithm, UseCase, &str); 38] = [
     (Algorithm::Blake3ServilMt, UseCase::ManyLongMessages, "throughput::hash_many_multithreaded(Mode::Plain, &Batch::from_blocks(blocks, 4096), out), the batch borrowed in place, each call after other work"),
     (Algorithm::Blake3ServilMt, UseCase::ContinuousMessages, "throughput::Pipeline kept per producer (1024 message slots, 16 rooms of 64 KiB); message, copy into rooms, commit, end; short messages share a room, each nonfinal commit of a long message fills a room; consume Hashed events at the message limit and drain every result before the sample ends"),
     (Algorithm::Blake3ServilMt, UseCase::ContinuousKeyedMessages, "throughput::Pipeline kept per producer (1024 message slots, 16 rooms of 64 KiB, separate from plain ContinuousMessages); message_with(Mode::Keyed(key)) alternating two keys per message, copy into rooms, commit, end; consume Hashed events at the message limit and drain every result before the sample ends"),
+    (Algorithm::Blake3ServilMt, UseCase::ContinuousLentMessages, "throughput::Pipeline kept per producer (1024 message slots, 0 rooms, separate from room-fed ContinuousMessages); message, unsafe lent(message, input) with up to 1024 Lent guards in flight; consume Hashed events and drop each Lent guard at the message limit and drain every result before the sample ends"),
     (Algorithm::Blake3ServilMt, UseCase::ContinuousBatches, "throughput::Pipeline and owned Batch inputs and digest boxes kept per producer and batch size; about 1 MiB of input buffers, at least 2 and at most 1024; refill by one bulk copy, message, batch; consume each Batch event's digests before reusing its storage, drain every result before the sample ends"),
     (Algorithm::Blake3ServilSt, UseCase::ContinuousMessages, "throughput::hash(Mode::Plain, blocks, len), one message after another, each read into a kept buffer of the program's in whole blocks and hashed on its thread (a Hasher fed 64 KiB pieces above 64 KiB)"),
     (Algorithm::Blake3ServilSt, UseCase::ContinuousKeyedMessages, "throughput::hash(Mode::Keyed(key), blocks, len), alternating two keys per message, each read into a kept buffer of the program's in whole blocks and hashed on its thread (a keyed Hasher fed 64 KiB pieces above 64 KiB)"),
+    (Algorithm::Blake3ServilSt, UseCase::ContinuousLentMessages, "throughput::hash(Mode::Plain, blocks, len), one message after another, lent directly in place with no extra copy"),
     (Algorithm::Blake3ServilSt, UseCase::ContinuousBatches, "throughput::hash_many(Mode::Plain, &Batch::from_blocks(blocks, 64), out), the batch borrowed in place, one batch after another, each read into a kept buffer of the program's and hashed on its thread"),
     (Algorithm::Blake3ServilMt, UseCase::ContinuousCollection, "throughput::Pipeline, the same rooms and calls as ContinuousMessages, the collection's items in order, each copied once into rooms; consume every item's Hashed event before the sample ends"),
     (Algorithm::Blake3ServilSt, UseCase::ContinuousCollection, "throughput::hash(Mode::Plain, blocks, len), the collection's messages one after another, each read into a kept buffer of the program's in whole blocks and hashed on its thread"),
@@ -7218,7 +7271,9 @@ fn cell_wants_sample(slot: usize, rounds: usize, visits: usize) -> bool {
  */
 fn continuous_min_inputs(input: &[u8], point: Point) -> usize {
     match point.use_case {
-        UseCase::ContinuousMessages | UseCase::ContinuousKeyedMessages => {
+        UseCase::ContinuousMessages
+        | UseCase::ContinuousKeyedMessages
+        | UseCase::ContinuousLentMessages => {
             let pieces = input.len().div_ceil(PIECE_LEN).max(1);
             2 * in_flight(input.len().min(PIECE_LEN)).div_ceil(pieces)
         }
@@ -10036,6 +10091,35 @@ mod correctness_tests {
             }
         }
         assert_eq!(checked, read.cells.len(), "every cell read back, none more");
+    }
+
+    #[test]
+    fn continuous_lent_messages_match_blake3_hash_and_lifecycle_probe() {
+        blake3_servil::initialize_multithreaded(None);
+        for &point in &POINTS[UseCase::ContinuousLentMessages.points()] {
+            let input = make_input(point.bytes);
+            let (buf, at) = block_copy(&input);
+            let blocks = &buf[at..][..point.bytes.next_multiple_of(BLOCK_LEN)];
+            let want = *blake3::hash(&input).as_bytes();
+            let count = if point.bytes <= 4096 { 1030 } else { 4 };
+            for algorithm in Algorithm::ALL {
+                if !algorithm.takes_part(UseCase::ContinuousLentMessages) {
+                    continue;
+                }
+                let mut got = Vec::new();
+                hash_batch(algorithm, blocks, point, count, |d| {
+                    got.push(<[u8; 32]>::try_from(d).unwrap())
+                });
+                assert_eq!(got.len(), count);
+                assert!(
+                    got.iter().all(|d| *d == want),
+                    "{} ContinuousLentMessages {}",
+                    algorithm.key(),
+                    point.label
+                );
+            }
+        }
+        pipeline::cold_lifecycle_probe();
     }
 
     #[test]

@@ -80,6 +80,7 @@ fn place(use_case: UseCase) -> (&'static str, &'static str, &'static str) {
         UseCase::ContinuousKeyedMessages => {
             ("keyed", "piped", "throughput::Pipeline::message_with")
         }
+        UseCase::ContinuousLentMessages => ("lent", "piped", "throughput::Pipeline::lent"),
         UseCase::ManyMessages => ("batch", "busy", "throughput::hash_many_multithreaded"),
         UseCase::ManyLongMessages => ("long", "busy", "throughput::hash_many_multithreaded"),
         UseCase::IdleManyMessages => ("batch", "idle", "throughput::hash_many_multithreaded"),
@@ -713,6 +714,7 @@ fn hashing(path: &Path) -> Section {
         rows: vec![
             ("one", "one message", "One logical message."),
             ("keyed", "one keyed message", "One message authenticated with its own per-message key (BLAKE3 keyed mode), alternating keys so consecutive messages never share a key."),
+            ("lent", "one message, lent in flight", "One logical message lent directly to the hasher without copying into rooms; the pipeline keeps up to 1,024 loans in flight and drops each guard on completion."),
             ("incremental", "one short message, fresh hasher", "Create an incremental hasher, update once with the complete message, finalize and consume its digest. A fresh hasher for every message."),
             ("batch", "a batch of short messages", "Many 64-byte messages hashed together, such as a Merkle tree's nodes; the axis counts the messages."),
             ("long", "a batch of longer messages", "Many 4 KiB messages hashed together, such as a store's blocks or a backup's chunks; the axis counts the messages."),
