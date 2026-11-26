@@ -87,10 +87,6 @@ criteria = "agent-safe-to-deploy"
 version = "0.9.6"
 criteria = "agent-safe-to-deploy"
 
-[[exemptions.constant_time_eq]]
-version = "0.4.2"
-criteria = "agent-safe-to-deploy"
-
 [[exemptions.crossbeam-deque]]
 version = "0.8.8"
 criteria = "agent-safe-to-deploy"
@@ -101,14 +97,6 @@ criteria = "agent-safe-to-deploy"
 
 [[exemptions.crossbeam-utils]]
 version = "0.8.23"
-criteria = "agent-safe-to-deploy"
-
-[[exemptions.digest]]
-version = "0.10.7"
-criteria = "agent-safe-to-deploy"
-
-[[exemptions.digest]]
-version = "0.11.3"
 criteria = "agent-safe-to-deploy"
 
 [[exemptions.find-msvc-tools]]
@@ -133,10 +121,6 @@ criteria = "agent-safe-to-deploy"
 
 [[exemptions.ring]]
 version = "0.17.14"
-criteria = "agent-safe-to-deploy"
-
-[[exemptions.sha1-checked]]
-version = "0.10.0"
 criteria = "agent-safe-to-deploy"
 
 [[exemptions.sha2]]

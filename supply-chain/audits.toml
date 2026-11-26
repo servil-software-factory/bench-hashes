@@ -28,6 +28,12 @@ criteria = "agent-safe-to-deploy"
 version = "0.12.1"
 notes = "Full line-by-line review of src/{lib,read,sealed}.rs (756 lines, no_std, no build.rs). Eager/Lazy buffer invariants enforced by sealed::BlockSizes (U1..=U255), ResetGuard restores invariants on compress/closure panic, and Clone::clone ptr::read duplicates only stack MaybeUninit + Copy pos."
 
+[[audits.constant_time_eq]]
+who = "Devon Jonte <devonjonte@users.noreply.github.com>"
+criteria = "agent-safe-to-deploy"
+version = "0.4.2"
+notes = "Full line-by-line review of src/{lib,classic,generic,sse2,neon,dit}.rs (no build.rs, deny(clippy::undocumented_unsafe_blocks)). All unaligned/SIMD loads assert exact slice lengths, inline asm uses pure/nomem/nostack/preserves_flags behind matching target_feature guards, and aarch64 DIT uses RAII restoration with valid AtomicU8 discriminant caching."
+
 [[audits.cpufeatures]]
 who = "Devon Jonte <devonjonte@users.noreply.github.com>"
 criteria = "agent-safe-to-deploy"
@@ -46,6 +52,18 @@ criteria = "agent-safe-to-deploy"
 delta = "0.1.6 -> 0.1.7"
 notes = "Manifest-only change pinning generic-array =0.14.7; zero source changes."
 
+[[audits.digest]]
+who = "Devon Jonte <devonjonte@users.noreply.github.com>"
+criteria = "agent-safe-to-deploy"
+version = "0.10.7"
+notes = "Full line-by-line review of src/{lib,digest,mac,core_api.rs,core_api/*}.rs (no_std, forbid(unsafe_code), no build.rs). Pure cryptographic digest/MAC traits and wrappers; MAC comparison delegates to subtle::ConstantTimeEq."
+
+[[audits.digest]]
+who = "Devon Jonte <devonjonte@users.noreply.github.com>"
+criteria = "agent-safe-to-deploy"
+version = "0.11.3"
+notes = "Full line-by-line review of src/{lib,digest,mac,xof_fixed,block_api.rs,block_api/*,buffer_macros/*}.rs (no_std, forbid(unsafe_code), no build.rs). Pure cryptographic digest/MAC traits, macros, and wrappers; MAC comparison delegates to ctutils::CtEq with ZeroizeOnDrop."
+
 [[audits.keccak]]
 who = "Devon Jonte <devonjonte@users.noreply.github.com>"
 criteria = "agent-safe-to-deploy"
@@ -57,6 +75,12 @@ who = "Devon Jonte <devonjonte@users.noreply.github.com>"
 criteria = "agent-safe-to-deploy"
 delta = "0.10.6 -> 0.10.7"
 notes = "Removes optional sha1-asm dependency and aarch64 asm wrapper, adds doc example."
+
+[[audits.sha1-checked]]
+who = "Devon Jonte <devonjonte@users.noreply.github.com>"
+criteria = "agent-safe-to-deploy"
+version = "0.10.0"
+notes = "Full line-by-line review of src/{lib,compress,ubc_check}.rs (no_std, no build.rs). Pure-Rust port of Marc Stevens's SHA-1DC collision detection with one unsafe layout cast (&[GenericArray<u8, U64>] to &[[u8; 64]], identical size/align 1) and checked two-block padding."
 
 [[audits.sha3]]
 who = "Devon Jonte <devonjonte@users.noreply.github.com>"
